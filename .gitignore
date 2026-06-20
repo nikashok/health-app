@@ -1,0 +1,25 @@
+# Dependencies
+node_modules/
+
+# Expo
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+
+# Native
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+# macOS
+.DS_Store
+
+# Env
+.env*.local
+
+# The bundled reference DB (assets/db/ifct2017.db) and vendored sources under
+# db_build/ ARE committed — they are build inputs/outputs, not generated junk.
