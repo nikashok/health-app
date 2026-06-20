@@ -42,9 +42,12 @@ export default function LogEntryScreen() {
   useEffect(() => {
     let active = true;
     (async () => {
-      const f = await getByCodeAndTable(params.code, params.table);
-      const customDefault =
-        params.table === 'custom' ? await getCustomFood(params.code) : null;
+      // Fetch the food and (for custom foods) its stored default measure in
+      // parallel — both are independent Supabase reads, so don't serialize them.
+      const [f, customDefault] = await Promise.all([
+        getByCodeAndTable(params.code, params.table),
+        params.table === 'custom' ? getCustomFood(params.code) : Promise.resolve(null),
+      ]);
       const opts = await getMeasures(
         params.code,
         customDefault?.default_measure_name

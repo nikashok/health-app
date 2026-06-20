@@ -59,9 +59,13 @@ export default function EditEntryScreen() {
         return;
       }
       const kind = tableToKind(e.food_table);
-      const f = e.food_code ? await getByCodeAndTable(e.food_code, kind) : null;
-      const customDefault =
-        e.food_table === 'custom' && e.food_code ? await getCustomFood(e.food_code) : null;
+      // Independent Supabase reads — run them in parallel, not one after the other.
+      const [f, customDefault] = await Promise.all([
+        e.food_code ? getByCodeAndTable(e.food_code, kind) : Promise.resolve(null),
+        e.food_table === 'custom' && e.food_code
+          ? getCustomFood(e.food_code)
+          : Promise.resolve(null),
+      ]);
       const opts = await getMeasures(
         e.food_code,
         customDefault?.default_measure_name
