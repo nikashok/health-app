@@ -1,28 +1,49 @@
 /**
- * Food search/data access (M1, LOG-2). Runs the shared queries from ./searchSql
- * against the writable DB, transparently falling back from FTS5 to LIKE when the
- * M0 probe found FTS5 unavailable.
+ * Food search/data access (M1, LOG-2).
+ *
+ * Reference foods (cooked_foods, foods) are searched against the on-device bundled
+ * DB — fast, offline, FTS5 with a LIKE fallback. The user's CUSTOM foods live in
+ * Supabase (synced across devices), so those are searched there and merged in. If
+ * the network is unavailable the custom lookup degrades to empty, so reference
+ * search still works fully offline.
  */
 import { getDatabase, isFtsAvailable } from './database';
 import {
-  buildCustomLikeSql,
   buildFtsMatch,
   buildLikeSql,
   buildLikeTerms,
   DEFAULT_LIMIT,
   GET_COOKED_BY_CODE,
-  GET_CUSTOM_BY_CODE,
   GET_RAW_BY_CODE,
   SEARCH_COOKED_FTS,
   SEARCH_RAW_FTS,
+  tokenize,
   type FoodKind,
   type SearchResult,
 } from './searchSql';
+import { supabase } from './supabase';
 
 export type { SearchResult, FoodKind } from './searchSql';
 
+const CUSTOM_COLS = 'code, name, energy_kcal, protein_g, fat_g, carb_g, fibre_g, sodium_mg';
+
+type CustomRow = {
+  code: string;
+  name: string;
+  energy_kcal: number | null;
+  protein_g: number | null;
+  fat_g: number | null;
+  carb_g: number | null;
+  fibre_g: number | null;
+  sodium_mg: number | null;
+};
+
+function toResult(r: CustomRow): SearchResult {
+  return { ...r, kind: 'custom' };
+}
+
 async function runSearch(
-  kind: FoodKind,
+  kind: 'cooked' | 'raw',
   q: string,
   limit: number
 ): Promise<SearchResult[]> {
@@ -52,12 +73,21 @@ export function searchRaw(q: string, limit = DEFAULT_LIMIT): Promise<SearchResul
   return runSearch('raw', q, limit);
 }
 
-/** User-added custom foods matching `q` (always LIKE — no FTS index). */
-export function searchCustom(q: string, limit = DEFAULT_LIMIT): Promise<SearchResult[]> {
-  const db = getDatabase();
-  const terms = buildLikeTerms(q);
-  if (terms.length === 0) return Promise.resolve([]);
-  return db.getAllAsync<SearchResult>(buildCustomLikeSql(terms.length), ...terms, limit);
+/** The signed-in user's custom foods matching `q` (Supabase; AND every term). Returns
+ *  [] if offline so reference search still works. */
+export async function searchCustom(q: string, limit = DEFAULT_LIMIT): Promise<SearchResult[]> {
+  const terms = tokenize(q);
+  if (terms.length === 0) return [];
+  try {
+    let query = supabase.from('custom_foods').select(CUSTOM_COLS).order('name').limit(limit);
+    for (const t of terms) query = query.ilike('name', `%${t}%`);
+    const { data, error } = await query;
+    if (error) throw error;
+    return (data as CustomRow[]).map(toResult);
+  } catch (e) {
+    console.warn('[search] custom-food lookup failed (offline?)', e);
+    return [];
+  }
 }
 
 /**
@@ -73,10 +103,20 @@ export async function searchAll(q: string, limitPerKind = DEFAULT_LIMIT): Promis
   return [...custom, ...cooked, ...raw];
 }
 
+/** One custom food by code (Supabase), or null. */
+async function getCustomByCode(code: string): Promise<SearchResult | null> {
+  const { data, error } = await supabase
+    .from('custom_foods')
+    .select(CUSTOM_COLS)
+    .eq('code', code)
+    .maybeSingle();
+  if (error) throw error;
+  return data ? toResult(data as CustomRow) : null;
+}
+
 /**
- * Look up a single food by code, checking cooked dishes first, then raw. Returns
- * null if no match. (custom_foods are handled by their own lookup in a later
- * milestone — TODO v1: include once custom-food search lands.)
+ * Look up a single food by code, checking cooked dishes first, then raw, then the
+ * user's custom foods. Returns null if no match.
  */
 export async function getByCode(code: string): Promise<SearchResult | null> {
   const db = getDatabase();
@@ -84,8 +124,7 @@ export async function getByCode(code: string): Promise<SearchResult | null> {
   if (cooked) return cooked;
   const raw = await db.getFirstAsync<SearchResult>(GET_RAW_BY_CODE, code);
   if (raw) return raw;
-  const custom = await db.getFirstAsync<SearchResult>(GET_CUSTOM_BY_CODE, code);
-  return custom ?? null;
+  return getCustomByCode(code);
 }
 
 /** Resolve a food by code within a known table — avoids cross-table code collisions. */
@@ -93,13 +132,9 @@ export async function getByCodeAndTable(
   code: string,
   table: FoodKind
 ): Promise<SearchResult | null> {
+  if (table === 'custom') return getCustomByCode(code);
   const db = getDatabase();
-  const sql =
-    table === 'cooked'
-      ? GET_COOKED_BY_CODE
-      : table === 'custom'
-        ? GET_CUSTOM_BY_CODE
-        : GET_RAW_BY_CODE;
+  const sql = table === 'cooked' ? GET_COOKED_BY_CODE : GET_RAW_BY_CODE;
   const row = await db.getFirstAsync<SearchResult>(sql, code);
   return row ?? null;
 }

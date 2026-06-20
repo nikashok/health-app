@@ -1,22 +1,34 @@
+import type { Session } from '@supabase/supabase-js';
 import { Stack } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 
 import { initDatabase } from '@/db/database';
+import { supabase } from '@/db/supabase';
+import { AuthScreen } from '@/ui/AuthScreen';
 import { colors, type } from '@/ui/theme';
 
 /**
- * Root layout. Blocks the UI until the database is copied, opened, and migrated
- * (M0) — every screen reads from it, so nothing should render before it's ready.
+ * Root layout. Two gates before the app renders:
+ *  1. The on-device food DB is copied, opened, and migrated (M0) — search reads it.
+ *  2. There's a Supabase session — user data (diary, profile, custom foods) is
+ *     private per account, so nothing renders until the user is signed in.
  */
 export default function RootLayout() {
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [session, setSession] = useState<Session | null | undefined>(undefined);
 
   useEffect(() => {
     initDatabase()
       .then(() => setReady(true))
       .catch((e) => setError(e instanceof Error ? e.message : String(e)));
+  }, []);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => setSession(data.session));
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, s) => setSession(s));
+    return () => sub.subscription.unsubscribe();
   }, []);
 
   if (error) {
@@ -28,13 +40,17 @@ export default function RootLayout() {
     );
   }
 
-  if (!ready) {
+  if (!ready || session === undefined) {
     return (
       <View style={styles.center}>
         <ActivityIndicator size="large" color={colors.leaf} />
         <Text style={styles.loading}>Preparing your food database…</Text>
       </View>
     );
+  }
+
+  if (session === null) {
+    return <AuthScreen />;
   }
 
   return (

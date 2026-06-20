@@ -9,6 +9,7 @@ import { addDays, buildRangeInsights, ratio, type RangeInsights } from '@/calc/i
 import { getDailyKcal, hasAnyLogged } from '@/db/insights';
 import { getEntriesForDate } from '@/db/logEntries';
 import { getProfile } from '@/db/profile';
+import { supabase } from '@/db/supabase';
 import type { LogEntry, MealType, UserProfile } from '@/types/db';
 import { Card, Chevron, GroupHeader, Row } from '@/ui/components';
 import { grams, numberText } from '@/ui/format';
@@ -190,6 +191,9 @@ export default function HomeScreen() {
         <Link href="/onboarding" style={styles.editTargets}>
           {target ? 'Edit targets' : 'Set targets'}
         </Link>
+        <Pressable onPress={() => supabase.auth.signOut()}>
+          <Text style={styles.signOut}>Sign out</Text>
+        </Pressable>
       </ScrollView>
 
       <Pressable
@@ -382,6 +386,12 @@ const styles = StyleSheet.create({
     marginTop: 24,
     color: colors.leafDark,
     fontWeight: '600',
+    textAlign: 'center',
+  },
+  signOut: {
+    ...type.subhead,
+    marginTop: 14,
+    color: colors.muted,
     textAlign: 'center',
   },
   addButton: {

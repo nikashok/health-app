@@ -21,6 +21,12 @@ config.resolver.resolveRequest = (context, moduleName, platform) => {
   if (platform === 'web' && NODE_BUILTIN_STUBS.has(moduleName)) {
     return { type: 'sourceFile', filePath: EMPTY };
   }
+  // supabase-js does a dynamic, .catch()-guarded import of @opentelemetry/api for
+  // optional tracing. It's not a dependency we use; Metro still resolves the
+  // specifier statically, so stub it to an empty module on every platform.
+  if (moduleName === '@opentelemetry/api') {
+    return { type: 'sourceFile', filePath: EMPTY };
+  }
   return defaultResolveRequest
     ? defaultResolveRequest(context, moduleName, platform)
     : context.resolveRequest(context, moduleName, platform);

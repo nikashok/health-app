@@ -33,9 +33,14 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   },
 });
 
-/** The signed-in user's id, or throws — every user-data write is scoped to it. */
+/**
+ * The signed-in user's id, or throws. Reads the locally-cached session (no network),
+ * so it's cheap to call on every user-data query. The auth gate guarantees a session
+ * exists before any app screen runs.
+ */
 export async function requireUserId(): Promise<string> {
-  const { data, error } = await supabase.auth.getUser();
-  if (error || !data.user) throw new Error('Not signed in');
-  return data.user.id;
+  const { data } = await supabase.auth.getSession();
+  const id = data.session?.user?.id;
+  if (!id) throw new Error('Not signed in');
+  return id;
 }

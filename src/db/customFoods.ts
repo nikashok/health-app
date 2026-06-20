@@ -1,15 +1,12 @@
 /**
- * custom_foods data access (M3, CUST-1). Quick-add a food the DB lacks; it becomes
- * searchable and loggable like any other food.
+ * custom_foods data access (M3, CUST-1) — now backed by Supabase (RLS owner-only, so
+ * each user's custom foods are private and sync across their devices). Quick-add a
+ * food the DB lacks; it becomes searchable (see search.ts) and loggable like any other.
  */
 import type { CustomFood } from '@/types/db';
 
-import { getDatabase } from './database';
-import {
-  generateCustomCode,
-  GET_CUSTOM_FOOD,
-  INSERT_CUSTOM_FOOD,
-} from './customFoodsSql';
+import { generateCustomCode } from './customFoodsSql';
+import { supabase } from './supabase';
 
 export interface NewCustomFood {
   name: string;
@@ -23,31 +20,33 @@ export interface NewCustomFood {
   default_grams_per_unit?: number | null;
 }
 
-/** Insert a custom food; returns its generated code. */
+/** Insert a custom food; returns its generated code (unique per user). user_id is
+ *  filled by the column default (auth.uid()) and enforced by RLS. */
 export async function insertCustomFood(f: NewCustomFood): Promise<string> {
-  const db = getDatabase();
   const code = generateCustomCode();
-  const now = new Date().toISOString();
-  await db.runAsync(
-    INSERT_CUSTOM_FOOD,
+  const { error } = await supabase.from('custom_foods').insert({
     code,
-    f.name,
-    f.energy_kcal,
-    f.protein_g ?? null,
-    f.fat_g ?? null,
-    f.carb_g ?? null,
-    f.fibre_g ?? null,
-    f.sodium_mg ?? null,
-    f.default_measure_name ?? null,
-    f.default_grams_per_unit ?? null,
-    now,
-    now
-  );
+    name: f.name,
+    energy_kcal: f.energy_kcal,
+    protein_g: f.protein_g ?? null,
+    fat_g: f.fat_g ?? null,
+    carb_g: f.carb_g ?? null,
+    fibre_g: f.fibre_g ?? null,
+    sodium_mg: f.sodium_mg ?? null,
+    default_measure_name: f.default_measure_name ?? null,
+    default_grams_per_unit: f.default_grams_per_unit ?? null,
+  });
+  if (error) throw error;
   return code;
 }
 
 /** Full custom-food row (used to seed its default measure in the log picker). */
 export async function getCustomFood(code: string): Promise<CustomFood | null> {
-  const row = await getDatabase().getFirstAsync<CustomFood>(GET_CUSTOM_FOOD, code);
-  return row ?? null;
+  const { data, error } = await supabase
+    .from('custom_foods')
+    .select('*')
+    .eq('code', code)
+    .maybeSingle();
+  if (error) throw error;
+  return (data as CustomFood | null) ?? null;
 }
