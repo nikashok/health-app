@@ -8,10 +8,11 @@ import {
   insertCustomFood,
   updateCustomFood,
 } from '@/db/customFoods';
+import { lookupNutrition, type NutritionLookup } from '@/db/nutritionLookup';
 import { confirmDestructive } from '@/lib/confirm';
 import type { MealType } from '@/types/db';
-import { Card, GroupFooter, GroupHeader, PrimaryButton, Row } from '@/ui/components';
-import { colors, type } from '@/ui/theme';
+import { Card, GroupFooter, GroupHeader, PrimaryButton, Row, TintButton } from '@/ui/components';
+import { colors, radius, type } from '@/ui/theme';
 
 /**
  * Custom food screen. Two modes:
@@ -36,6 +37,9 @@ export default function CustomFoodScreen() {
   const [measureName, setMeasureName] = useState('');
   const [measureGrams, setMeasureGrams] = useState('');
   const [saving, setSaving] = useState(false);
+  const [looking, setLooking] = useState(false);
+  const [lookup, setLookup] = useState<NutritionLookup | null>(null);
+  const [lookupError, setLookupError] = useState<string | null>(null);
 
   // Edit mode: prefill from the stored food.
   useEffect(() => {
@@ -59,6 +63,29 @@ export default function CustomFoodScreen() {
 
   const energy = parseFloat(kcal);
   const canSave = name.trim().length > 0 && energy >= 0 && !Number.isNaN(energy);
+  const canLookup = name.trim().length >= 2 && !looking && !saving;
+
+  // Ask the AI lookup for per-100g nutrition and pre-fill the macro fields. The user
+  // still reviews and saves — nothing is committed here.
+  async function onLookup() {
+    if (!canLookup) return;
+    setLooking(true);
+    setLookupError(null);
+    try {
+      const r = await lookupNutrition(name.trim());
+      setKcal(String(r.energy_kcal));
+      setProtein(String(r.protein_g));
+      setCarb(String(r.carb_g));
+      setFat(String(r.fat_g));
+      setFibre(String(r.fibre_g));
+      setLookup(r);
+    } catch (e) {
+      setLookup(null);
+      setLookupError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLooking(false);
+    }
+  }
 
   async function onSave() {
     if (!canSave || saving) return;
@@ -112,6 +139,27 @@ export default function CustomFoodScreen() {
         <InputRow label="Calories" value={kcal} onChangeText={setKcal} placeholder="0" suffix="Cal" numeric />
       </Card>
       <GroupFooter>Name and calories are required. Everything below is per 100 g.</GroupFooter>
+
+      <TintButton
+        title={looking ? 'Looking up…' : '✨  Look up nutrition'}
+        onPress={onLookup}
+        style={[styles.lookup, !canLookup && styles.lookupOff]}
+      />
+      {lookupError ? <Text style={styles.lookupError}>{lookupError}</Text> : null}
+      {lookup ? (
+        <View style={styles.lookupInfo}>
+          <Text style={styles.lookupSource}>
+            Pre-filled from {lookup.source} · {lookup.confidence} confidence
+          </Text>
+          {lookup.basis_note ? <Text style={styles.lookupNote}>{lookup.basis_note}</Text> : null}
+          <Text style={styles.lookupCaution}>AI estimate — check the numbers before saving.</Text>
+          {!lookup.sane ? (
+            <Text style={styles.lookupWarn}>
+              ⚠︎ Calories look inconsistent with the macros — please double-check.
+            </Text>
+          ) : null}
+        </View>
+      ) : null}
 
       <GroupHeader>Macros (optional)</GroupHeader>
       <Card>
@@ -202,4 +250,17 @@ const styles = StyleSheet.create({
   save: { marginTop: 24 },
   delete: { marginTop: 8, paddingVertical: 14, alignItems: 'center' },
   deleteText: { ...type.body, color: colors.rose, fontWeight: '500' },
+  lookup: { marginTop: 12 },
+  lookupOff: { opacity: 0.5 },
+  lookupError: { ...type.footnote, color: colors.rose, marginTop: 8, marginHorizontal: 16 },
+  lookupInfo: {
+    marginTop: 12,
+    padding: 14,
+    borderRadius: radius.md,
+    backgroundColor: colors.mint,
+  },
+  lookupSource: { ...type.subhead, color: colors.leafDark, fontWeight: '600' },
+  lookupNote: { ...type.footnote, color: colors.muted, marginTop: 3 },
+  lookupCaution: { ...type.footnote, color: colors.muted, marginTop: 6 },
+  lookupWarn: { ...type.footnote, color: colors.saffron, marginTop: 6, fontWeight: '600' },
 });
