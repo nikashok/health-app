@@ -1,7 +1,7 @@
 import dayjs from 'dayjs';
-import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { useCallback, useMemo, useState } from 'react';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { gramsTotal, snapshotNutrition } from '@/calc/logEntry';
 import { getCustomFood } from '@/db/customFoods';
@@ -39,33 +39,36 @@ export default function LogEntryScreen() {
   const [qty, setQty] = useState('1');
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
-    let active = true;
-    (async () => {
-      // Fetch the food and (for custom foods) its stored default measure in
-      // parallel — both are independent Supabase reads, so don't serialize them.
-      const [f, customDefault] = await Promise.all([
-        getByCodeAndTable(params.code, params.table),
-        params.table === 'custom' ? getCustomFood(params.code) : Promise.resolve(null),
-      ]);
-      const opts = await getMeasures(
-        params.code,
-        customDefault?.default_measure_name
-          ? {
-              measure_name: customDefault.default_measure_name,
-              grams_per_unit: customDefault.default_grams_per_unit ?? 1,
-            }
-          : null
-      );
-      if (!active) return;
-      setFood(f ?? null);
-      setMeasures(opts);
-      setSelected(opts.find((o) => o.is_default) ?? opts[0] ?? null);
-    })();
-    return () => {
-      active = false;
-    };
-  }, [params.code, params.table]);
+  // Reload on focus so returning from "Edit food details" shows the new values.
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
+      (async () => {
+        // Fetch the food and (for custom foods) its stored default measure in
+        // parallel — both are independent Supabase reads, so don't serialize them.
+        const [f, customDefault] = await Promise.all([
+          getByCodeAndTable(params.code, params.table),
+          params.table === 'custom' ? getCustomFood(params.code) : Promise.resolve(null),
+        ]);
+        const opts = await getMeasures(
+          params.code,
+          customDefault?.default_measure_name
+            ? {
+                measure_name: customDefault.default_measure_name,
+                grams_per_unit: customDefault.default_grams_per_unit ?? 1,
+              }
+            : null
+        );
+        if (!active) return;
+        setFood(f ?? null);
+        setMeasures(opts);
+        setSelected((prev) => prev ?? opts.find((o) => o.is_default) ?? opts[0] ?? null);
+      })();
+      return () => {
+        active = false;
+      };
+    }, [params.code, params.table])
+  );
 
   const quantity = parseFloat(qty);
   const quantityError = qty.trim().length > 0 && !(quantity > 0) ? 'Enter a quantity above 0.' : null;
@@ -113,7 +116,17 @@ export default function LogEntryScreen() {
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
-      <Text style={styles.eyebrow}>{kindLabel(food.kind)}</Text>
+      <View style={styles.titleRow}>
+        <Text style={styles.eyebrow}>{kindLabel(food.kind)}</Text>
+        {food.kind === 'custom' ? (
+          <Pressable
+            onPress={() => router.push({ pathname: '/custom-food', params: { code: food.code } })}
+            hitSlop={8}
+          >
+            <Text style={styles.editLink}>Edit details</Text>
+          </Pressable>
+        ) : null}
+      </View>
       <Text style={styles.name}>{food.name}</Text>
       <Text style={styles.meta}>
         {numberText(food.energy_kcal)} Cal/100g · {MEAL_LABELS[meal]} · {dayjs(date).format('D MMM YYYY')}
@@ -186,7 +199,9 @@ const styles = StyleSheet.create({
   loading: { ...type.subhead, color: colors.muted, marginTop: 12 },
   errorTitle: { ...type.title3, color: colors.ink, marginBottom: 16 },
   errorButton: { alignSelf: 'stretch', paddingHorizontal: 18 },
-  eyebrow: { ...type.footnote, color: colors.leafDark, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.3, marginTop: 4 },
+  titleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 4 },
+  eyebrow: { ...type.footnote, color: colors.leafDark, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.3 },
+  editLink: { ...type.subhead, color: colors.leafDark, fontWeight: '600' },
   name: { ...type.title1, color: colors.ink, marginTop: 4 },
   meta: { ...type.subhead, color: colors.muted, marginTop: 6, lineHeight: 20 },
   planBanner: {

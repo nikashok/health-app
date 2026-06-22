@@ -1,20 +1,31 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useState } from 'react';
-import { ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
-import { insertCustomFood } from '@/db/customFoods';
+import {
+  deleteCustomFood,
+  getCustomFood,
+  insertCustomFood,
+  updateCustomFood,
+} from '@/db/customFoods';
+import { confirmDestructive } from '@/lib/confirm';
 import type { MealType } from '@/types/db';
 import { Card, GroupFooter, GroupHeader, PrimaryButton, Row } from '@/ui/components';
 import { colors, type } from '@/ui/theme';
 
 /**
- * Custom food quick-add (CUST-1). Name + calories required; macros and a default
- * measure optional. On save the food is stored (reusable in search, CUST-2) and we
- * jump straight to logging it for the current meal + date.
+ * Custom food screen. Two modes:
+ *  - ADD (CUST-1): no `code` param. Name + calories required; on save the food is
+ *    stored and we jump straight to logging it for the current meal + date.
+ *  - EDIT: a `code` param. Loads the existing food, lets you change its details or
+ *    delete it, then returns. Editing only affects FUTURE logs — past diary entries
+ *    keep their nutrition snapshot (CLAUDE.md rule 2).
  */
 export default function CustomFoodScreen() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ meal?: MealType; date?: string }>();
+  const params = useLocalSearchParams<{ meal?: MealType; date?: string; code?: string }>();
+  const editCode = params.code ?? null;
+  const isEdit = editCode !== null;
 
   const [name, setName] = useState('');
   const [kcal, setKcal] = useState('');
@@ -26,6 +37,26 @@ export default function CustomFoodScreen() {
   const [measureGrams, setMeasureGrams] = useState('');
   const [saving, setSaving] = useState(false);
 
+  // Edit mode: prefill from the stored food.
+  useEffect(() => {
+    if (!editCode) return;
+    let active = true;
+    getCustomFood(editCode).then((f) => {
+      if (!active || !f) return;
+      setName(f.name);
+      setKcal(String(f.energy_kcal));
+      setProtein(numStr(f.protein_g));
+      setFat(numStr(f.fat_g));
+      setCarb(numStr(f.carb_g));
+      setFibre(numStr(f.fibre_g));
+      setMeasureName(f.default_measure_name ?? '');
+      setMeasureGrams(numStr(f.default_grams_per_unit));
+    });
+    return () => {
+      active = false;
+    };
+  }, [editCode]);
+
   const energy = parseFloat(kcal);
   const canSave = name.trim().length > 0 && energy >= 0 && !Number.isNaN(energy);
 
@@ -34,7 +65,7 @@ export default function CustomFoodScreen() {
     setSaving(true);
     try {
       const grams = parseFloat(measureGrams);
-      const code = await insertCustomFood({
+      const fields = {
         name: name.trim(),
         energy_kcal: energy,
         protein_g: num(protein),
@@ -43,15 +74,34 @@ export default function CustomFoodScreen() {
         fibre_g: num(fibre),
         default_measure_name: measureName.trim() || null,
         default_grams_per_unit: grams > 0 ? grams : null,
-      });
-      // Straight into logging the food we just created.
-      router.replace({
-        pathname: '/log-entry',
-        params: { code, table: 'custom', meal: params.meal ?? 'breakfast', date: params.date ?? today() },
-      });
+      };
+      if (isEdit) {
+        await updateCustomFood(editCode, fields);
+        router.back();
+      } else {
+        const code = await insertCustomFood(fields);
+        // Straight into logging the food we just created.
+        router.replace({
+          pathname: '/log-entry',
+          params: { code, table: 'custom', meal: params.meal ?? 'breakfast', date: params.date ?? today() },
+        });
+      }
     } finally {
       setSaving(false);
     }
+  }
+
+  function onDelete() {
+    if (!editCode) return;
+    confirmDestructive(
+      'Delete custom food?',
+      'It will no longer appear in search. Past diary entries are unaffected.',
+      'Delete',
+      async () => {
+        await deleteCustomFood(editCode);
+        router.back();
+      }
+    );
   }
 
   return (
@@ -78,11 +128,16 @@ export default function CustomFoodScreen() {
       </Card>
 
       <PrimaryButton
-        title={saving ? 'Saving…' : 'Save & log'}
+        title={saving ? 'Saving…' : isEdit ? 'Save changes' : 'Save & log'}
         onPress={onSave}
         disabled={!canSave || saving}
         style={styles.save}
       />
+      {isEdit ? (
+        <Pressable style={styles.delete} onPress={onDelete}>
+          <Text style={styles.deleteText}>Delete custom food</Text>
+        </Pressable>
+      ) : null}
     </ScrollView>
   );
 }
@@ -130,6 +185,9 @@ function num(s: string): number | null {
   const n = parseFloat(s);
   return Number.isNaN(n) ? null : n;
 }
+function numStr(n: number | null): string {
+  return n != null ? String(n) : '';
+}
 function today(): string {
   return new Date().toISOString().slice(0, 10);
 }
@@ -142,4 +200,6 @@ const styles = StyleSheet.create({
   input: { ...type.body, color: colors.ink, flex: 1, textAlign: 'right', paddingVertical: 0 },
   suffix: { ...type.body, color: colors.muted },
   save: { marginTop: 24 },
+  delete: { marginTop: 8, paddingVertical: 14, alignItems: 'center' },
+  deleteText: { ...type.body, color: colors.rose, fontWeight: '500' },
 });
