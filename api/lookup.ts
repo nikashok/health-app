@@ -27,9 +27,15 @@ const SUPABASE_URL =
 const SUPABASE_ANON_KEY =
   process.env.SUPABASE_ANON_KEY ??
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV2eHdha2d4YmZ3eW12bXlvd2ljIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE5NzMyODYsImV4cCI6MjA5NzU0OTI4Nn0.EMt2PK2Hvr1UL75xzBN0aSYnFOqxySlVhev84PWUxU4';
-const EXTRACT_MODEL = process.env.OPENAI_MODEL ?? 'gpt-5.4-mini';
-const SEARCH_MODEL = process.env.OPENAI_SEARCH_MODEL ?? 'gpt-4.1-mini';
+const EXTRACT_MODEL = process.env.OPENAI_MODEL ?? 'gpt-4.1-mini';
+// Search step MUST support the web_search tool. gpt-4.1 is the cheapest model
+// consistently documented as supporting it; override via OPENAI_SEARCH_MODEL.
+const SEARCH_MODEL = process.env.OPENAI_SEARCH_MODEL ?? 'gpt-4.1';
 const RESPONSES_URL = 'https://api.openai.com/v1/responses';
+
+// Grounded web-search calls take several seconds; opt out of the low default serverless
+// timeout (Vercel otherwise kills the function at ~10s and the app sees "failed").
+export const maxDuration = 60;
 
 const NUTRITION_SCHEMA = {
   type: 'object',
@@ -199,6 +205,8 @@ export default async function handler(req: any, res: any) {
     );
     data = safeParse(responseText(extract));
   } catch (e) {
+    // Surface the real cause in Vercel runtime logs (the client only shows a generic msg).
+    console.error('[lookup] failed:', e);
     return res.status(502).json({ error: 'Lookup failed', detail: String(e).slice(0, 300) });
   } finally {
     clearTimeout(timer);
