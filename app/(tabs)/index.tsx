@@ -8,10 +8,12 @@ import { consumedTotals, mealConsumedKcal, plannedTotals } from '@/calc/dayTotal
 import { addDays, buildRangeInsights, ratio, type RangeInsights } from '@/calc/insights';
 import { getDailyKcal, hasAnyLogged } from '@/db/insights';
 import { getEntriesForDate } from '@/db/logEntries';
+import { getMeasurement } from '@/db/measurements';
 import { getProfile } from '@/db/profile';
 import { supabase } from '@/db/supabase';
-import type { LogEntry, MealType, UserProfile } from '@/types/db';
+import type { BodyMeasurement, LogEntry, MealType, UserProfile } from '@/types/db';
 import { Card, Chevron, GroupHeader, Row } from '@/ui/components';
+import { SyncStatus } from '@/ui/SyncStatus';
 import { grams, numberText } from '@/ui/format';
 import { clampPercent, colors, radius, shadow, type } from '@/ui/theme';
 
@@ -31,6 +33,7 @@ export default function HomeScreen() {
     week: RangeInsights;
     month: RangeInsights;
     hasData: boolean;
+    measurement: BodyMeasurement | null;
   } | null>(null);
 
   useFocusEffect(
@@ -45,10 +48,11 @@ export default function HomeScreen() {
 
         const today = dayjs().format('YYYY-MM-DD');
         const target = profile.target_kcal ?? null;
-        const [todayEntries, monthMap, hasData] = await Promise.all([
+        const [todayEntries, monthMap, hasData, measurement] = await Promise.all([
           getEntriesForDate(today),
           getDailyKcal(addDays(today, -29), today),
           hasAnyLogged(),
+          getMeasurement(today),
         ]);
         if (!active) return;
         setState({
@@ -57,6 +61,7 @@ export default function HomeScreen() {
           week: buildRangeInsights(monthMap, today, 7, target),
           month: buildRangeInsights(monthMap, today, 30, target),
           hasData,
+          measurement,
         });
       })();
       return () => {
@@ -74,7 +79,7 @@ export default function HomeScreen() {
     );
   }
 
-  const { profile, today, week, month, hasData } = state;
+  const { profile, today, week, month, hasData, measurement } = state;
   const target = profile.target_kcal ?? null;
   const consumed = consumedTotals(today);
   const plannedToday = plannedTotals(today);
@@ -89,6 +94,7 @@ export default function HomeScreen() {
           <View>
             <Text style={styles.title}>Home</Text>
             <Text style={styles.eyebrow}>{dayjs().format('dddd, D MMMM')}</Text>
+            <SyncStatus style={styles.syncChip} />
           </View>
           <Pressable style={styles.diaryButton} onPress={() => router.push('/diary')} hitSlop={8}>
             <Text style={styles.diaryButtonText}>Diary</Text>
@@ -146,6 +152,19 @@ export default function HomeScreen() {
             <MacroBar label="Carbs" value={consumed.carb_g} target={profile.target_carb_g} />
             <MacroBar label="Fat" value={consumed.fat_g} target={profile.target_fat_g} />
           </View>
+        </Card>
+
+        <Card style={styles.measureCard}>
+          <Row
+            first
+            onPress={() => router.push({ pathname: '/measurement', params: { date: todayISO } })}
+          >
+            <View style={styles.flexShrink}>
+              <Text style={styles.measureTitle}>Weight & waist</Text>
+              <Text style={styles.measureSub}>{measureSummary(measurement)}</Text>
+            </View>
+            <Chevron />
+          </Row>
         </Card>
 
         <GroupHeader>Quick add</GroupHeader>
@@ -284,6 +303,16 @@ function StatRow({ insights, target }: { insights: RangeInsights; target: number
   );
 }
 
+function measureSummary(m: BodyMeasurement | null): string {
+  if (m && (m.weight_kg != null || m.waist_cm != null)) {
+    const parts: string[] = [];
+    if (m.weight_kg != null) parts.push(`${m.weight_kg} kg`);
+    if (m.waist_cm != null) parts.push(`${m.waist_cm} cm`);
+    return `${parts.join(' · ')} — logged today`;
+  }
+  return 'Log today’s weight & waist';
+}
+
 function inferMeal(): MealType {
   const hour = dayjs().hour();
   if (hour < 11) return 'breakfast';
@@ -307,12 +336,16 @@ const styles = StyleSheet.create({
   },
   title: { ...type.largeTitle, color: colors.ink },
   eyebrow: { ...type.subhead, color: colors.muted, marginTop: 2 },
+  syncChip: { marginTop: 8 },
   diaryButton: { flexDirection: 'row', alignItems: 'center', marginTop: 8 },
   diaryButtonText: { ...type.body, color: colors.leafDark, fontWeight: '600' },
   noticeCard: { marginBottom: 16 },
   noticeTitle: { ...type.headline, color: colors.ink },
   noticeBody: { ...type.subhead, color: colors.muted, marginTop: 3, lineHeight: 19 },
   heroCard: { padding: 18 },
+  measureCard: { marginTop: 16 },
+  measureTitle: { ...type.headline, color: colors.ink },
+  measureSub: { ...type.subhead, color: colors.muted, marginTop: 3 },
   heroHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   heroLabel: { ...type.footnote, color: colors.muted, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.3 },
   planPill: {

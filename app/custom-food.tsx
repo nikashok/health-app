@@ -1,6 +1,6 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Linking, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import {
   deleteCustomFood,
@@ -29,6 +29,7 @@ export default function CustomFoodScreen() {
   const isEdit = editCode !== null;
 
   const [name, setName] = useState('');
+  const [description, setDescription] = useState('');
   const [kcal, setKcal] = useState('');
   const [protein, setProtein] = useState('');
   const [fat, setFat] = useState('');
@@ -72,7 +73,7 @@ export default function CustomFoodScreen() {
     setLooking(true);
     setLookupError(null);
     try {
-      const r = await lookupNutrition(name.trim());
+      const r = await lookupNutrition(name.trim(), description.trim());
       setKcal(String(r.energy_kcal));
       setProtein(String(r.protein_g));
       setCarb(String(r.carb_g));
@@ -140,8 +141,20 @@ export default function CustomFoodScreen() {
       </Card>
       <GroupFooter>Name and calories are required. Everything below is per 100 g.</GroupFooter>
 
+      <GroupHeader>Describe it (optional — helps the AI lookup)</GroupHeader>
+      <Card>
+        <TextInput
+          style={styles.descInput}
+          value={description}
+          onChangeText={setDescription}
+          placeholder="e.g. homemade rajma, thick onion-tomato gravy, ~1 tbsp oil per serving"
+          placeholderTextColor={colors.faint}
+          multiline
+        />
+      </Card>
+
       <TintButton
-        title={looking ? 'Looking up…' : '✨  Look up nutrition'}
+        title={looking ? 'Searching credible sources…' : '✨  Look up nutrition'}
         onPress={onLookup}
         style={[styles.lookup, !canLookup && styles.lookupOff]}
       />
@@ -152,7 +165,19 @@ export default function CustomFoodScreen() {
             Pre-filled from {lookup.source} · {lookup.confidence} confidence
           </Text>
           {lookup.basis_note ? <Text style={styles.lookupNote}>{lookup.basis_note}</Text> : null}
-          <Text style={styles.lookupCaution}>AI estimate — check the numbers before saving.</Text>
+          {lookup.sources.length > 0 ? (
+            <View style={styles.sources}>
+              <Text style={styles.sourcesLabel}>SOURCES</Text>
+              {lookup.sources.map((s) => (
+                <Pressable key={s.url} onPress={() => Linking.openURL(s.url)} hitSlop={4}>
+                  <Text style={styles.sourceLink} numberOfLines={1}>
+                    ↗ {s.title || s.url}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+          ) : null}
+          <Text style={styles.lookupCaution}>AI estimate — review the numbers and sources before saving.</Text>
           {!lookup.sane ? (
             <Text style={styles.lookupWarn}>
               ⚠︎ Calories look inconsistent with the macros — please double-check.
@@ -261,6 +286,17 @@ const styles = StyleSheet.create({
   },
   lookupSource: { ...type.subhead, color: colors.leafDark, fontWeight: '600' },
   lookupNote: { ...type.footnote, color: colors.muted, marginTop: 3 },
+  descInput: {
+    ...type.body,
+    color: colors.ink,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    minHeight: 64,
+    textAlignVertical: 'top',
+  },
+  sources: { marginTop: 10, gap: 4 },
+  sourcesLabel: { ...type.caption, color: colors.muted, fontWeight: '600', letterSpacing: 0.4 },
+  sourceLink: { ...type.footnote, color: colors.leafDark, fontWeight: '500' },
   lookupCaution: { ...type.footnote, color: colors.muted, marginTop: 6 },
   lookupWarn: { ...type.footnote, color: colors.saffron, marginTop: 6, fontWeight: '600' },
 });

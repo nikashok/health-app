@@ -7,12 +7,17 @@
  * iOS/Android and the browser. The SQL itself lives in ./m0Sql.
  */
 import {
+  ADD_LOG_ENTRIES_SYNC_UUID,
+  BODY_MEASUREMENTS_DDL,
   DISH_MEASURES_INSERT,
   FTS_PROBE,
   GLOBAL_MEASURES,
   GLOBAL_MEASURES_INSERT,
+  INDEX_LOG_ENTRIES_SYNC_UUID,
+  LOG_ENTRIES_SYNC_UUID_COLUMN,
   N001_OVERRIDE,
   SCHEMA_VERSION,
+  SYNC_TABLES_DDL,
   USER_TABLES_DDL,
 } from './m0Sql';
 
@@ -42,22 +47,46 @@ export async function runMigrations(db: SqlDb): Promise<void> {
   const row = await db.getFirstAsync<{ version: number }>(
     'SELECT version FROM schema_version ORDER BY version DESC LIMIT 1'
   );
-  if (row && row.version >= SCHEMA_VERSION) return; // already migrated
+  if (!(row && row.version >= SCHEMA_VERSION)) {
+    // M0 not yet applied — run it once, gated by schema_version.
+    await db.withTransactionAsync(async () => {
+      for (const ddl of USER_TABLES_DDL) {
+        await db.execAsync(ddl);
+      }
+      await db.execAsync(N001_OVERRIDE);
 
-  await db.withTransactionAsync(async () => {
-    for (const ddl of USER_TABLES_DDL) {
-      await db.execAsync(ddl);
-    }
-    await db.execAsync(N001_OVERRIDE);
+      for (const [name, grams] of GLOBAL_MEASURES) {
+        await db.runAsync(GLOBAL_MEASURES_INSERT, name, grams);
+      }
+      await db.execAsync(DISH_MEASURES_INSERT);
 
-    for (const [name, grams] of GLOBAL_MEASURES) {
-      await db.runAsync(GLOBAL_MEASURES_INSERT, name, grams);
-    }
-    await db.execAsync(DISH_MEASURES_INSERT);
+      await db.runAsync('DELETE FROM schema_version');
+      await db.runAsync('INSERT INTO schema_version (version) VALUES (?)', SCHEMA_VERSION);
+    });
+  }
 
-    await db.runAsync('DELETE FROM schema_version');
-    await db.runAsync('INSERT INTO schema_version (version) VALUES (?)', SCHEMA_VERSION);
-  });
+  // Sync schema is layered on top of M0 every launch (idempotent, additive). It lives
+  // OUTSIDE the SCHEMA_VERSION gate so it never re-runs M0's non-idempotent seed.
+  await ensureSyncSchema(db);
+}
+
+/**
+ * Ensure the local-first sync schema exists (outbox, meta, log_entries.sync_uuid).
+ * All statements are idempotent: the tables/index use IF NOT EXISTS, and the
+ * ADD COLUMN is guarded by a PRAGMA check (SQLite lacks ADD COLUMN IF NOT EXISTS).
+ */
+export async function ensureSyncSchema(db: SqlDb): Promise<void> {
+  for (const ddl of SYNC_TABLES_DDL) {
+    await db.execAsync(ddl);
+  }
+  await db.execAsync(BODY_MEASUREMENTS_DDL);
+  const cols = await db.getAllAsync<{ name: string }>(
+    'PRAGMA table_info(log_entries)'
+  );
+  if (!cols.some((c) => c.name === LOG_ENTRIES_SYNC_UUID_COLUMN)) {
+    await db.execAsync(ADD_LOG_ENTRIES_SYNC_UUID);
+  }
+  await db.execAsync(INDEX_LOG_ENTRIES_SYNC_UUID);
 }
 
 /** Probe FTS5. Returns false when unavailable (→ caller falls back to LIKE search). */

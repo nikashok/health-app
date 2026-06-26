@@ -19,6 +19,7 @@ import {
 import { getProfile } from '@/db/profile';
 import type { LogEntry, MealType, UserProfile } from '@/types/db';
 import { Card, Chevron, PrimaryButton, Row, TintButton } from '@/ui/components';
+import { SyncStatus } from '@/ui/SyncStatus';
 import { grams } from '@/ui/format';
 import { clampPercent, colors, radius, type } from '@/ui/theme';
 
@@ -80,6 +81,10 @@ export default function DiaryScreen() {
       contentContainerStyle={styles.content}
       contentInsetAdjustmentBehavior="automatic"
     >
+      <View style={styles.syncRow}>
+        <SyncStatus />
+      </View>
+
       <View style={styles.dateBar}>
         <Pressable onPress={() => shiftDay(-1)} style={styles.navBtn} hitSlop={8}>
           <Text style={styles.navText}>‹</Text>
@@ -240,6 +245,7 @@ function portion(e: LogEntry): string {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.bg },
   content: { padding: 16, paddingBottom: 42 },
+  syncRow: { alignItems: 'flex-end', marginBottom: 6 },
   dateBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   navBtn: { paddingHorizontal: 16, paddingVertical: 6 },
   navText: { fontSize: 30, color: colors.leafDark, fontWeight: '500' },

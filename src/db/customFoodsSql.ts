@@ -27,6 +27,15 @@ export const INSERT_CUSTOM_FOOD_PARAMS = [
 
 export const GET_CUSTOM_FOOD = `SELECT * FROM custom_foods WHERE code = ?`;
 
+/** Update a custom food's editable fields. created_at is preserved; updated_at advances. */
+export const UPDATE_CUSTOM_FOOD = `
+  UPDATE custom_foods SET
+    name = ?, energy_kcal = ?, protein_g = ?, fat_g = ?, carb_g = ?, fibre_g = ?,
+    sodium_mg = ?, default_measure_name = ?, default_grams_per_unit = ?, updated_at = ?
+  WHERE code = ?`;
+
+export const DELETE_CUSTOM_FOOD = `DELETE FROM custom_foods WHERE code = ?`;
+
 /** Generate a unique custom-food code, e.g. "CUST-LZ4F9-K2". Single-user, so a
  *  timestamp + small random suffix is collision-safe enough. */
 export function generateCustomCode(now = Date.now(), rand = Math.random()): string {

@@ -139,3 +139,53 @@ export const DISH_MEASURES_INSERT =
 
 /** FTS5 probe (M0 task 3). If this throws, the app falls back to LIKE search. */
 export const FTS_PROBE = `SELECT * FROM foods_fts LIMIT 1`;
+
+/**
+ * Sync schema (local-first backup to Supabase). Layered ON TOP of M0 idempotently on
+ * every launch (see migrate.ts `ensureSyncSchema`) — deliberately NOT part of
+ * USER_TABLES_DDL or the SCHEMA_VERSION gate, so the M0 acceptance verifiers are
+ * unaffected and M0's non-idempotent measures seed is never re-run.
+ *
+ *  - sync_outbox: a durable dirty-key set. One row per (table, key) that needs pushing;
+ *    the drain re-reads the current local row and upserts it (or deletes remotely if the
+ *    local row is gone), so it always pushes the latest local truth and self-collapses.
+ *  - sync_meta:   tiny key/value store (e.g. the one-time `hydrated` marker, last sync).
+ *  - log_entries.sync_uuid: a stable, client-owned key (custom_foods already has `code`,
+ *    user_profile is single-row) so pushes are idempotent upserts.
+ */
+export const SYNC_TABLES_DDL: string[] = [
+  `CREATE TABLE IF NOT EXISTS sync_outbox (
+     table_name TEXT NOT NULL,
+     row_key    TEXT NOT NULL,
+     queued_at  TEXT NOT NULL,
+     attempts   INTEGER NOT NULL DEFAULT 0,
+     PRIMARY KEY (table_name, row_key)
+   )`,
+  `CREATE TABLE IF NOT EXISTS sync_meta (
+     key   TEXT PRIMARY KEY,
+     value TEXT
+   )`,
+];
+
+/**
+ * Daily body measurements (weight + waist), one row per day. Added idempotently every
+ * launch (same path as the sync tables) so it lands on existing installs without a
+ * SCHEMA_VERSION bump. Single-user locally, so `measured_on` is the primary key; the
+ * date is also the stable cross-store key for backup (remote keys on user_id + date).
+ */
+export const BODY_MEASUREMENTS_DDL =
+  `CREATE TABLE IF NOT EXISTS body_measurements (
+     measured_on TEXT PRIMARY KEY,
+     weight_kg   REAL,
+     waist_cm    REAL,
+     created_at  TEXT NOT NULL,
+     updated_at  TEXT NOT NULL
+   )`;
+
+/** Column we add to log_entries if missing (SQLite has no ADD COLUMN IF NOT EXISTS). */
+export const LOG_ENTRIES_SYNC_UUID_COLUMN = 'sync_uuid';
+export const ADD_LOG_ENTRIES_SYNC_UUID =
+  `ALTER TABLE log_entries ADD COLUMN sync_uuid TEXT`;
+export const INDEX_LOG_ENTRIES_SYNC_UUID =
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_log_entries_sync_uuid
+     ON log_entries (sync_uuid) WHERE sync_uuid IS NOT NULL`;

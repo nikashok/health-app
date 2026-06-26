@@ -100,6 +100,15 @@ export interface CustomFood {
   updated_at: string;
 }
 
+/** One day's body measurements (weight + waist). One row per day. */
+export interface BodyMeasurement {
+  measured_on: string; // YYYY-MM-DD
+  weight_kg: number | null;
+  waist_cm: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
 /** food_code IS NULL => global household measure available to any food. */
 export interface Measure {
   id: number;

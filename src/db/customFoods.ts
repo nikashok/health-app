@@ -1,12 +1,20 @@
 /**
- * custom_foods data access (M3, CUST-1) — now backed by Supabase (RLS owner-only, so
- * each user's custom foods are private and sync across their devices). Quick-add a
- * food the DB lacks; it becomes searchable (see search.ts) and loggable like any other.
+ * custom_foods data access (M3, CUST-1) — local-first with one-way backup to Supabase.
+ * Quick-add a food the DB lacks; it becomes searchable (see search.ts) and loggable like
+ * any other food. The client-generated `code` is the stable cross-store key, so pushes
+ * are idempotent upserts.
  */
 import type { CustomFood } from '@/types/db';
 
-import { generateCustomCode } from './customFoodsSql';
-import { supabase } from './supabase';
+import { getDatabase } from './database';
+import {
+  DELETE_CUSTOM_FOOD,
+  generateCustomCode,
+  GET_CUSTOM_FOOD,
+  INSERT_CUSTOM_FOOD,
+  UPDATE_CUSTOM_FOOD,
+} from './customFoodsSql';
+import { enqueue, scheduleDrain } from './sync';
 
 export interface NewCustomFood {
   name: string;
@@ -20,62 +28,71 @@ export interface NewCustomFood {
   default_grams_per_unit?: number | null;
 }
 
-/** Insert a custom food; returns its generated code (unique per user). user_id is
- *  filled by the column default (auth.uid()) and enforced by RLS. */
+/** Insert a custom food, queue it for backup, and return its generated code. */
 export async function insertCustomFood(f: NewCustomFood): Promise<string> {
+  const db = getDatabase();
   const code = generateCustomCode();
-  const { error } = await supabase.from('custom_foods').insert({
-    code,
-    name: f.name,
-    energy_kcal: f.energy_kcal,
-    protein_g: f.protein_g ?? null,
-    fat_g: f.fat_g ?? null,
-    carb_g: f.carb_g ?? null,
-    fibre_g: f.fibre_g ?? null,
-    sodium_mg: f.sodium_mg ?? null,
-    default_measure_name: f.default_measure_name ?? null,
-    default_grams_per_unit: f.default_grams_per_unit ?? null,
+  const now = new Date().toISOString();
+  await db.withTransactionAsync(async () => {
+    await db.runAsync(
+      INSERT_CUSTOM_FOOD,
+      code,
+      f.name,
+      f.energy_kcal,
+      f.protein_g ?? null,
+      f.fat_g ?? null,
+      f.carb_g ?? null,
+      f.fibre_g ?? null,
+      f.sodium_mg ?? null,
+      f.default_measure_name ?? null,
+      f.default_grams_per_unit ?? null,
+      now,
+      now
+    );
+    await enqueue(db, 'custom_foods', code);
   });
-  if (error) throw error;
+  scheduleDrain();
   return code;
 }
 
 /** Full custom-food row (used to seed its default measure in the log picker). */
 export async function getCustomFood(code: string): Promise<CustomFood | null> {
-  const { data, error } = await supabase
-    .from('custom_foods')
-    .select('*')
-    .eq('code', code)
-    .maybeSingle();
-  if (error) throw error;
-  return (data as CustomFood | null) ?? null;
+  const row = await getDatabase().getFirstAsync<CustomFood>(GET_CUSTOM_FOOD, code);
+  return row ?? null;
 }
 
 /**
- * Update a custom food's details. Note: existing diary entries keep their
- * nutrition SNAPSHOT (CLAUDE.md rule 2) — edits here only affect future logs.
+ * Update a custom food's details. Existing diary entries keep their nutrition SNAPSHOT
+ * (CLAUDE.md rule 2) — edits here only affect future logs.
  */
 export async function updateCustomFood(code: string, f: NewCustomFood): Promise<void> {
-  const { error } = await supabase
-    .from('custom_foods')
-    .update({
-      name: f.name,
-      energy_kcal: f.energy_kcal,
-      protein_g: f.protein_g ?? null,
-      fat_g: f.fat_g ?? null,
-      carb_g: f.carb_g ?? null,
-      fibre_g: f.fibre_g ?? null,
-      sodium_mg: f.sodium_mg ?? null,
-      default_measure_name: f.default_measure_name ?? null,
-      default_grams_per_unit: f.default_grams_per_unit ?? null,
-    })
-    .eq('code', code);
-  if (error) throw error;
+  const db = getDatabase();
+  await db.withTransactionAsync(async () => {
+    await db.runAsync(
+      UPDATE_CUSTOM_FOOD,
+      f.name,
+      f.energy_kcal,
+      f.protein_g ?? null,
+      f.fat_g ?? null,
+      f.carb_g ?? null,
+      f.fibre_g ?? null,
+      f.sodium_mg ?? null,
+      f.default_measure_name ?? null,
+      f.default_grams_per_unit ?? null,
+      new Date().toISOString(),
+      code
+    );
+    await enqueue(db, 'custom_foods', code);
+  });
+  scheduleDrain();
 }
 
-/** Delete a custom food. Past diary entries that referenced it keep their snapshot
- *  rows (they store name + nutrition), so the diary is unaffected. */
+/** Delete a custom food. Past diary entries that referenced it keep their snapshot rows. */
 export async function deleteCustomFood(code: string): Promise<void> {
-  const { error } = await supabase.from('custom_foods').delete().eq('code', code);
-  if (error) throw error;
+  const db = getDatabase();
+  await db.withTransactionAsync(async () => {
+    await db.runAsync(DELETE_CUSTOM_FOOD, code);
+    await enqueue(db, 'custom_foods', code); // drain sees row gone → deletes remotely
+  });
+  scheduleDrain();
 }

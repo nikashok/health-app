@@ -11,6 +11,12 @@ import { supabase } from './supabase';
 const LOOKUP_URL =
   process.env.EXPO_PUBLIC_LOOKUP_URL ?? 'https://health-app-nikashok.vercel.app/api/lookup';
 
+/** A credible source the model cited for the estimate. */
+export interface LookupSource {
+  title: string;
+  url: string;
+}
+
 export interface NutritionLookup {
   name: string;
   energy_kcal: number;
@@ -21,13 +27,21 @@ export interface NutritionLookup {
   confidence: 'low' | 'medium' | 'high';
   basis_note: string;
   source: string;
+  sources: LookupSource[];
   sane: boolean;
 }
 
 export class LookupError extends Error {}
 
-/** Ask the server to estimate nutrition for `name`. Throws LookupError on failure. */
-export async function lookupNutrition(name: string): Promise<NutritionLookup> {
+/**
+ * Ask the server to research nutrition for `name` (+ optional free-text `description`)
+ * via web search, and return per-100g values with the sources it cited. Throws
+ * LookupError on failure. The user always reviews/approves before saving.
+ */
+export async function lookupNutrition(
+  name: string,
+  description = ''
+): Promise<NutritionLookup> {
   const { data } = await supabase.auth.getSession();
   const token = data.session?.access_token;
   if (!token) throw new LookupError('Not signed in');
@@ -37,7 +51,7 @@ export async function lookupNutrition(name: string): Promise<NutritionLookup> {
     res = await fetch(LOOKUP_URL, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: name.trim() }),
+      body: JSON.stringify({ name: name.trim(), description: description.trim() }),
     });
   } catch {
     throw new LookupError('Could not reach the lookup service. Check your connection.');
@@ -47,5 +61,6 @@ export async function lookupNutrition(name: string): Promise<NutritionLookup> {
     const body = await res.json().catch(() => ({}));
     throw new LookupError(body?.error ?? `Lookup failed (${res.status})`);
   }
-  return (await res.json()) as NutritionLookup;
+  const json = (await res.json()) as NutritionLookup;
+  return { ...json, sources: json.sources ?? [] };
 }
