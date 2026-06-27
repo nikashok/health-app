@@ -19,3 +19,9 @@ export const RECENT_MEASUREMENTS = `
    WHERE weight_kg IS NOT NULL OR waist_cm IS NOT NULL
    ORDER BY measured_on DESC
    LIMIT ?`;
+
+/** All measurements, oldest first (for lifetime sparklines). */
+export const ALL_MEASUREMENTS_ASC = `
+  SELECT * FROM body_measurements
+   WHERE weight_kg IS NOT NULL OR waist_cm IS NOT NULL
+   ORDER BY measured_on ASC`;

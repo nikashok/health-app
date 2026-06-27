@@ -1,75 +1,70 @@
 import { Platform, type TextStyle } from 'react-native';
 
 /**
- * iOS design language. The app keeps its brand green as the accent/tint, but every
- * surface, separator, and label colour follows iOS system conventions: a grouped
- * background with white inset cards, hairline separators, and SF system type.
- *
- * Token names are intentionally stable (bg / surface / ink / muted …) so screens
- * keep working; the values underneath are the iOS palette. Light mode only for now
- * (values are picked to be easy to fork into a dark theme later).
+ * Vital Dark design language. All surfaces, separators, and label colours follow the
+ * dark palette introduced in the Vital Dark Home redesign. Token names are kept stable
+ * so every screen continues to work; only the values underneath changed.
  */
 export const colors = {
   // Surfaces
-  bg: '#f2f2f7', // systemGroupedBackground
-  surface: '#ffffff', // secondarySystemGroupedBackground (inset cards)
-  surfaceAlt: '#f2f2f7', // nested / inset wells inside a card
-  fill: '#eef0f3', // tertiary fill — search fields, segmented track
-  fillStrong: '#e3e3e8', // secondary fill
+  bg: '#0a0a0d',
+  surface: 'rgba(255,255,255,0.045)' as string,     // card background
+  surfaceAlt: 'rgba(255,255,255,0.03)' as string,   // nested wells
+  fill: 'rgba(255,255,255,0.06)' as string,         // search fields, segmented track
+  fillStrong: 'rgba(255,255,255,0.09)' as string,   // stepper bg, pressed state
 
-  // Text — iOS label hierarchy (opaque approximations)
-  ink: '#1c1c1e', // label
-  muted: '#6c6c70', // secondaryLabel
-  faint: '#aeaeb2', // tertiaryLabel / placeholders
+  // Text
+  ink: '#f2f2f4',
+  muted: 'rgba(235,235,245,0.55)' as string,
+  faint: 'rgba(235,235,245,0.35)' as string,        // placeholders
 
-  // Hairlines
-  line: '#e5e5ea', // separator
-  lineStrong: '#d1d1d6', // opaque separator
+  // Borders / hairlines
+  line: 'rgba(255,255,255,0.07)' as string,         // card border, row divider
+  lineStrong: 'rgba(255,255,255,0.12)' as string,   // stepper separator
 
-  // Brand accent (green) — tint for buttons, links, progress, selection
-  leaf: '#2f6f45',
-  leafDark: '#1f5533',
-  mint: '#e4f0e7',
+  // Brand accent — amber
+  leaf: '#ffb454',
+  leafDark: '#ffd08a',
+  mint: 'rgba(255,180,84,0.12)' as string,
 
-  // Semantic accents
-  saffron: '#b36b00',
-  saffronBg: '#fff5df',
-  saffronLine: '#f1d08a',
-  sky: '#2b6f9f',
-  skyBg: '#e7f2f9',
-  rose: '#d70015', // systemRed
-  disabled: '#c7c7cc', // systemGray3
+  // Warning / over-target — amber
+  saffron: '#ffb454',
+  saffronBg: 'rgba(255,170,70,0.12)' as string,
+  saffronLine: 'rgba(255,170,70,0.30)' as string,
+
+  // Info — cyan
+  sky: '#3bc9ff',
+  skyBg: 'rgba(59,201,255,0.12)' as string,
+
+  // Error
+  rose: '#ff6b6b',
+
+  // Disabled
+  disabled: 'rgba(255,255,255,0.18)' as string,
 };
 
 export const radius = {
   sm: 8,
-  md: 12, // inset cards, inputs, filled buttons
+  md: 12,
   lg: 16,
   pill: 999,
 };
 
-/** iOS grouped lists are flat; this soft shadow is only for floating elements (FAB). */
 export const shadow = {
   shadowColor: '#000000',
-  shadowOpacity: 0.12,
-  shadowRadius: 12,
-  shadowOffset: { width: 0, height: 6 },
-  elevation: 5,
+  shadowOpacity: 0.35,
+  shadowRadius: 16,
+  shadowOffset: { width: 0, height: 8 },
+  elevation: 8,
 };
 
-/** Standard horizontal margin for grouped content (matches iOS inset lists). */
 export const spacing = {
   screen: 16,
   gutter: 16,
 };
 
-/** The platform system font (San Francisco on iOS). */
 export const systemFont = Platform.select({ ios: undefined, default: 'System' as const });
 
-/**
- * iOS type ramp. `as const` keeps fontWeight as literal strings so these satisfy
- * TextStyle. Spread onto a Text style: `style={[type.headline, { color: ... }]}`.
- */
 export const type = {
   largeTitle: { fontSize: 34, fontWeight: '700', letterSpacing: 0.37 },
   title1: { fontSize: 28, fontWeight: '700', letterSpacing: 0.36 },
@@ -86,3 +81,29 @@ export const type = {
 export function clampPercent(value: number): `${number}%` {
   return `${Math.max(0, Math.min(1, value)) * 100}%`;
 }
+
+/**
+ * Dark ("Vital") theme — extended tokens used by the home screen and available
+ * for any component that needs accent-colour variants beyond the base palette.
+ */
+export const dark = {
+  bg: colors.bg,
+  card: colors.surface,
+  border: colors.line,
+  divider: 'rgba(255,255,255,0.05)' as string,
+  trackBg: colors.fill,
+  ink: colors.ink,
+  muted: colors.muted,
+  label: 'rgba(235,235,245,0.42)' as string,
+  accent: '#ffb454',
+  accent2: '#ffd08a',
+  cyan: '#2bb8f0',
+  cyan2: '#74e0ff',
+  green: '#22c98a',
+  green2: '#6cf0bb',
+  orange: '#ff7a4d',
+  orange2: '#ffb454',
+  amber: '#ffb454',
+  amber2: '#ffd08a',
+  glow: 'rgba(255,180,84,0.18)' as string,
+};

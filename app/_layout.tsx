@@ -97,9 +97,10 @@ export default function RootLayout() {
         headerStyle: { backgroundColor: colors.bg },
         headerShadowVisible: false,
         headerTintColor: colors.leafDark,
-        headerTitleStyle: { color: colors.ink, fontWeight: '600' },
+        headerTitleStyle: { color: colors.ink, fontWeight: '600', fontSize: 17 },
         headerBackButtonDisplayMode: 'minimal',
         contentStyle: { backgroundColor: colors.bg },
+        headerBlurEffect: 'dark',
       }}
     >
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />

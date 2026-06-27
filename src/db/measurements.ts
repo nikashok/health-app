@@ -7,6 +7,7 @@ import type { BodyMeasurement } from '@/types/db';
 
 import { getDatabase } from './database';
 import {
+  ALL_MEASUREMENTS_ASC,
   GET_MEASUREMENT,
   RECENT_MEASUREMENTS,
   UPSERT_MEASUREMENT,
@@ -45,4 +46,9 @@ export async function saveMeasurement(date: string, m: MeasurementInput): Promis
 /** Recent measurements, newest first (for a short history). */
 export function getRecentMeasurements(limit = 14): Promise<BodyMeasurement[]> {
   return getDatabase().getAllAsync<BodyMeasurement>(RECENT_MEASUREMENTS, limit);
+}
+
+/** All measurements, oldest first (for lifetime sparklines). */
+export function getAllMeasurements(): Promise<BodyMeasurement[]> {
+  return getDatabase().getAllAsync<BodyMeasurement>(ALL_MEASUREMENTS_ASC);
 }
