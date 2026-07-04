@@ -31,3 +31,20 @@ pass its acceptance check, then move on. Full guide: `build_docs/BUILD_GUIDE.md`
 ## Commands
 - `npx expo start`   # run
 - `npm test`         # unit + invariant tests
+
+## Addendum (2026-07): scope changes since v1
+
+The "no backend" and "no weight tracking" lines above are historical. Shipped since:
+- Supabase one-way backup + auth (`src/db/sync.ts`). Local SQLite remains the source of
+  truth for all reads and writes.
+- `body_measurements` (daily weight/waist) + measurement screen.
+- Read-side insights layer (`src/calc/trend.ts`, `src/calc/tdee.ts`,
+  `src/calc/foodPatterns.ts`; `app/insights.tsx`).
+
+The four invariants above still hold. Two more now apply:
+5. Trend weight, TDEE, forecasts, and food-pattern stats are DERIVED views over
+   snapshots/measurements. They are never persisted and never synced; insights code
+   never writes.
+6. Insights read only snapshotted values in `log_entries`. Never join back to
+   `foods`/`cooked_foods` for intake math. If a nutrient isn't snapshotted, metrics
+   needing it are deferred rather than joined.
