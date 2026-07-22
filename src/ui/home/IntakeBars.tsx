@@ -30,7 +30,7 @@ export function WeekCard({ week, target }: { week: RangeInsights; target: number
         </Text>
       </View>
       <WeekBars week={week} target={target} />
-      {week.loggedDays > 0 && (
+      {week.countedDays > 0 && (
         <Text style={styles.weekSub}>
           Avg {Math.round(week.avgKcal).toLocaleString()} kcal/day this week.
         </Text>
@@ -50,7 +50,7 @@ export function MonthCard({ month, target }: { month: RangeInsights; target: num
         </Text>
       </View>
       <MonthBars month={month} target={target} />
-      {month.loggedDays > 0 && (
+      {month.countedDays > 0 && (
         <Text style={styles.weekSub}>
           Avg {Math.round(month.avgKcal).toLocaleString()} kcal/day this month.
         </Text>

@@ -25,11 +25,19 @@ export interface DayKcal {
   kcal: number;
 }
 
+/**
+ * A day below this is treated as an incomplete log (a forgotten meal, a single snack
+ * entered and abandoned) rather than a real day of eating, so it is excluded from the
+ * average. Such days still appear in `series` and in `loggedDays` — they happened.
+ */
+export const MIN_COUNTED_KCAL = 500;
+
 export interface RangeInsights {
   series: DayKcal[]; // one point per day in range (0 when nothing logged) — the trend
   totalDays: number; // length of the range (7 or ~30)
   loggedDays: number; // days that actually have logged data
-  avgKcal: number; // average over LOGGED days only (0 if none)
+  countedDays: number; // logged days at/above MIN_COUNTED_KCAL — the average's denominator
+  avgKcal: number; // average over COUNTED days only (0 if none)
   daysOnTarget: number | null; // days within tolerance of target; null if no target
   partial: boolean; // fewer logged days than the full range → label as partial
 }
@@ -56,8 +64,12 @@ export function buildRangeInsights(
 
   const logged = series.filter((d) => d.kcal > 0);
   const loggedDays = logged.length;
+
+  // Barely-logged days would drag the average down and misrepresent actual intake.
+  const counted = logged.filter((d) => d.kcal >= MIN_COUNTED_KCAL);
+  const countedDays = counted.length;
   const avgKcal =
-    loggedDays === 0 ? 0 : logged.reduce((s, d) => s + d.kcal, 0) / loggedDays;
+    countedDays === 0 ? 0 : counted.reduce((s, d) => s + d.kcal, 0) / countedDays;
 
   let daysOnTarget: number | null = null;
   if (target != null && target > 0) {
@@ -69,6 +81,7 @@ export function buildRangeInsights(
     series,
     totalDays: days,
     loggedDays,
+    countedDays,
     avgKcal,
     daysOnTarget,
     partial: loggedDays < days,

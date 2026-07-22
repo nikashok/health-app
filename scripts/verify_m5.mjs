@@ -126,8 +126,12 @@ try {
   const monthMap = dailyMap(db, addDays(TODAY, -29), TODAY);
   const week = buildRangeInsights(monthMap, TODAY, 7, target.target_kcal);
   check('week trend has 7 points', week.series.length === 7);
-  check('week avg is over logged days only',
-    near(week.avgKcal, (2000 + 1800 + 411.5) / 3), `avg=${week.avgKcal.toFixed(1)}`);
+  // The 411.5 kcal day is logged but under MIN_COUNTED_KCAL, so it is not averaged.
+  check('week avg is over counted days only (≥500 kcal)',
+    near(week.avgKcal, (2000 + 1800) / 2), `avg=${week.avgKcal.toFixed(1)}`);
+  check('week counts the sub-500 day as logged, not as counted',
+    week.loggedDays === 3 && week.countedDays === 2,
+    `logged=${week.loggedDays} counted=${week.countedDays}`);
   check('week days-on-target uses target band (±10%)',
     week.daysOnTarget === 2, `onTarget=${week.daysOnTarget} of ${week.loggedDays} logged`);
   check('week labelled partial (<7 days logged)', week.partial === true);
@@ -137,8 +141,8 @@ try {
   check('month trend has 30 points', month.series.length === 30);
   check('month includes day -29 (range boundary)', monthMap[addDays(TODAY, -29)] === 1500);
   check('month excludes day -35 (outside range)', monthMap[addDays(TODAY, -35)] === undefined);
-  check('month avg excludes out-of-range day',
-    near(month.avgKcal, (1500 + 2000 + 1800 + 411.5) / 4), `avg=${month.avgKcal.toFixed(1)}`);
+  check('month avg excludes out-of-range and sub-500 days',
+    near(month.avgKcal, (1500 + 2000 + 1800) / 3), `avg=${month.avgKcal.toFixed(1)}`);
   check('month labelled partial', month.partial === true);
 
   db.close();

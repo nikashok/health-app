@@ -31,6 +31,28 @@ describe('buildRangeInsights', () => {
   test('avg is over logged days only', () => {
     const r = buildRangeInsights(perDay, '2026-06-20', 7, 2000);
     expect(r.avgKcal).toBeCloseTo((1800 + 2000 + 2200) / 3, 5); // not /7
+    expect(r.countedDays).toBe(3);
+  });
+
+  test('days under 500 kcal are excluded from the average but still logged', () => {
+    const withScrap = { ...perDay, '2026-06-17': 320 };
+    const r = buildRangeInsights(withScrap, '2026-06-20', 7, 2000);
+    expect(r.loggedDays).toBe(4); // the 320 day happened
+    expect(r.countedDays).toBe(3); // …but doesn't dilute the average
+    expect(r.avgKcal).toBeCloseTo((1800 + 2000 + 2200) / 3, 5);
+  });
+
+  test('500 exactly still counts', () => {
+    const r = buildRangeInsights({ '2026-06-20': 500 }, '2026-06-20', 7, 2000);
+    expect(r.countedDays).toBe(1);
+    expect(r.avgKcal).toBe(500);
+  });
+
+  test('only sub-500 days → no average to report', () => {
+    const r = buildRangeInsights({ '2026-06-20': 200 }, '2026-06-20', 7, 2000);
+    expect(r.loggedDays).toBe(1);
+    expect(r.countedDays).toBe(0);
+    expect(r.avgKcal).toBe(0);
   });
 
   test('daysOnTarget counts logged days within 10% of target', () => {
