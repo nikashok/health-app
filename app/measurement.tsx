@@ -38,6 +38,11 @@ export default function MeasurementScreen() {
     };
   }, [date]);
 
+  // Last reading from an earlier day, shown as a placeholder so the previous value stays
+  // visible on a day with nothing logged. It is a hint only — never saved implicitly.
+  const prevWeight = lastBefore(recent, date, 'weight_kg');
+  const prevWaist = lastBefore(recent, date, 'waist_cm');
+
   const w = parseFloat(weight);
   const wa = parseFloat(waist);
   const hasWeight = weight.trim() !== '' && w > 0;
@@ -69,7 +74,7 @@ export default function MeasurementScreen() {
             style={styles.input}
             value={weight}
             onChangeText={setWeight}
-            placeholder="0"
+            placeholder={prevWeight != null ? String(prevWeight) : '0'}
             placeholderTextColor={colors.faint}
             keyboardType="decimal-pad"
             inputMode="decimal"
@@ -81,7 +86,7 @@ export default function MeasurementScreen() {
             style={styles.input}
             value={waist}
             onChangeText={setWaist}
-            placeholder="0"
+            placeholder={prevWaist != null ? String(prevWaist) : '0'}
             placeholderTextColor={colors.faint}
             keyboardType="decimal-pad"
             inputMode="decimal"
@@ -89,7 +94,10 @@ export default function MeasurementScreen() {
           />
         </FieldRow>
       </Card>
-      <GroupFooter>Logged once a day — saving again updates today’s entry.</GroupFooter>
+      <GroupFooter>
+        Logged once a day — saving again updates today’s entry. Greyed values are your last
+        reading, kept for reference until you enter a new one.
+      </GroupFooter>
 
       <PrimaryButton
         title={saving ? 'Saving…' : 'Save'}
@@ -117,6 +125,18 @@ export default function MeasurementScreen() {
       ) : null}
     </ScrollView>
   );
+}
+
+/** Newest value of `key` recorded strictly before `date`. `recent` is newest-first. */
+function lastBefore(
+  recent: BodyMeasurement[],
+  date: string,
+  key: 'weight_kg' | 'waist_cm'
+): number | null {
+  for (const m of recent) {
+    if (m.measured_on < date && m[key] != null) return m[key];
+  }
+  return null;
 }
 
 function today(): string {

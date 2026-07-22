@@ -9,7 +9,7 @@ import { consumedTotals } from '@/calc/dayTotals';
 import { addDays, buildRangeInsights } from '@/calc/insights';
 import { getDailyKcal } from '@/db/insights';
 import { getEntriesForDate } from '@/db/logEntries';
-import { getAllMeasurements, getMeasurement, getRecentMeasurements } from '@/db/measurements';
+import { getAllMeasurements, getRecentMeasurements } from '@/db/measurements';
 import { getProfile } from '@/db/profile';
 import { supabase } from '@/db/supabase';
 import { useSyncStatus } from '@/db/sync';
@@ -44,10 +44,9 @@ export default function HomeScreen() {
         }
         const todayISO = dayjs().format('YYYY-MM-DD');
         const target = profile.target_kcal ?? null;
-        const [todayEntries, monthMap, measurement, recentMeasurements, allMeasurements] = await Promise.all([
+        const [todayEntries, monthMap, recentMeasurements, allMeasurements] = await Promise.all([
           getEntriesForDate(todayISO),
           getDailyKcal(addDays(todayISO, -29), todayISO),
-          getMeasurement(todayISO),
           getRecentMeasurements(7),
           getAllMeasurements(),
         ]);
@@ -57,7 +56,6 @@ export default function HomeScreen() {
           today: todayEntries,
           week: buildRangeInsights(monthMap, todayISO, 7, target),
           monthMap,
-          measurement,
           recentMeasurements,
           allMeasurements,
         });
@@ -77,7 +75,7 @@ export default function HomeScreen() {
     );
   }
 
-  const { profile, today, week, monthMap, measurement, allMeasurements } = state;
+  const { profile, today, week, monthMap, allMeasurements } = state;
   const target = profile.target_kcal ?? null;
   const todayISO = dayjs().format('YYYY-MM-DD');
   const consumed = consumedTotals(today);
@@ -104,7 +102,7 @@ export default function HomeScreen() {
           <CalorieRing consumed={consumed} target={target} />
           <MacrosCard consumed={consumed} profile={profile} />
           <QuickAddChips today={today} todayISO={todayISO} router={router} />
-          <BodyTrends measurement={measurement} allMeasurements={allMeasurements} />
+          <BodyTrends allMeasurements={allMeasurements} todayISO={todayISO} />
           <WeekCard week={week} target={target} />
           <MonthCard month={month} target={target} />
           <TodayMeals today={today} todayISO={todayISO} router={router} />
@@ -126,7 +124,7 @@ export default function HomeScreen() {
       <QuickAddSheet
         visible={sheetOpen}
         onClose={() => setSheetOpen(false)}
-        measurement={measurement}
+        allMeasurements={allMeasurements}
         todayISO={todayISO}
         router={router}
         insetsBottom={insets.bottom}

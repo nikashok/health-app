@@ -1,3 +1,4 @@
+import dayjs from 'dayjs';
 import { Text, View } from 'react-native';
 import {
   Defs,
@@ -11,35 +12,42 @@ import {
 import type { BodyMeasurement } from '@/types/db';
 import { dark as D } from '@/ui/theme';
 
-import { buildAreaPath, buildSparkPoints } from './homeUtils';
+import { buildAreaPath, buildSparkPoints, carryForward, latestMeasured } from './homeUtils';
 import { styles } from './styles';
 
-/** Weight + waist lifetime sparkline cards. */
+/**
+ * Weight + waist lifetime sparkline cards. Values carry forward: on a day with no
+ * reading the card keeps showing the last one recorded, stamped with its date.
+ */
 export function BodyTrends({
-  measurement,
   allMeasurements,
+  todayISO,
 }: {
-  measurement: BodyMeasurement | null;
   allMeasurements: BodyMeasurement[];
+  todayISO: string;
 }) {
+  const weight = latestMeasured(allMeasurements, 'weight_kg');
+  const waist = latestMeasured(allMeasurements, 'waist_cm');
   return (
     <View style={styles.section}>
       <Text style={styles.sectionLabel}>Trends</Text>
       <View style={styles.trendsGrid}>
         <MiniTrendCard
           label="Weight"
-          value={measurement?.weight_kg ?? null}
+          value={weight?.value ?? null}
+          asOf={asOfLabel(weight?.date, todayISO)}
           unit="kg"
-          data={allMeasurements.map((m) => m.weight_kg ?? 0)}
+          data={carryForward(allMeasurements.map((m) => m.weight_kg))}
           strokeColor={D.amber}
           gradId="wA"
           gradColor={D.amber}
         />
         <MiniTrendCard
           label="Waist"
-          value={measurement?.waist_cm ?? null}
+          value={waist?.value ?? null}
+          asOf={asOfLabel(waist?.date, todayISO)}
           unit="cm"
-          data={allMeasurements.map((m) => m.waist_cm ?? 0)}
+          data={carryForward(allMeasurements.map((m) => m.waist_cm))}
           strokeColor={D.cyan}
           gradId="wB"
           gradColor={D.cyan}
@@ -49,9 +57,16 @@ export function BodyTrends({
   );
 }
 
+/** "as of 12 Jul" when the shown value is carried over from an earlier day. */
+function asOfLabel(date: string | undefined, todayISO: string): string | null {
+  if (!date || date === todayISO) return null;
+  return `as of ${dayjs(date).format('D MMM')}`;
+}
+
 function MiniTrendCard({
   label,
   value,
+  asOf,
   unit,
   data,
   strokeColor,
@@ -60,6 +75,7 @@ function MiniTrendCard({
 }: {
   label: string;
   value: number | null;
+  asOf: string | null;
   unit: string;
   data: number[];
   strokeColor: string;
@@ -76,6 +92,7 @@ function MiniTrendCard({
         <Text style={styles.trendVal}>{value ?? '—'}</Text>
         <Text style={styles.trendUnit}>{unit}</Text>
       </View>
+      {asOf ? <Text style={styles.trendAsOf}>{asOf}</Text> : null}
       <Svg width="100%" height={38} viewBox="0 0 120 38" preserveAspectRatio="none">
         <Defs>
           <SvgLinearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">

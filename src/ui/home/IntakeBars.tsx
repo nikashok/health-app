@@ -1,11 +1,23 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import { Text, View } from 'react-native';
 
-import type { RangeInsights } from '@/calc/insights';
+import { kcalBand, type KcalBand, type RangeInsights } from '@/calc/insights';
 import { dark as D } from '@/ui/theme';
 
 import { getDayInitial } from './homeUtils';
 import { styles } from './styles';
+
+/** Bar gradients (top → bottom) per band: over target red, under yellow, on target green. */
+const BAND_GRADIENTS: Record<KcalBand, [string, string]> = {
+  over: [D.red2, D.red],
+  under: [D.yellow2, D.yellow],
+  on: [D.green2, D.green],
+};
+
+/** Falls back to the brand amber when there is no target to compare against. */
+function bandGradient(band: KcalBand | null): [string, string] {
+  return band ? BAND_GRADIENTS[band] : [D.accent2, D.accent];
+}
 
 /** "This week" card: 7-day calorie bars + on-target count + average. */
 export function WeekCard({ week, target }: { week: RangeInsights; target: number | null }) {
@@ -55,22 +67,17 @@ function WeekBars({ week, target }: { week: RangeInsights; target: number | null
       {week.series.map((d) => {
         const h = Math.max(4, (d.kcal / max) * MAX_H);
         const hasData = d.kcal > 0;
-        const isOver = target !== null && d.kcal > target + 100;
         const dayInit = getDayInitial(d.date);
         return (
           <View key={d.date} style={styles.barCol}>
             <View style={[styles.barTrack, { height: MAX_H }]}>
               {hasData ? (
-                isOver ? (
-                  <View style={[styles.bar, styles.barOver, { height: h, borderRadius: 8 }]} />
-                ) : (
-                  <LinearGradient
-                    colors={[D.accent2, D.accent]}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 0, y: 1 }}
-                    style={[styles.bar, { height: h, borderRadius: 8 }]}
-                  />
-                )
+                <LinearGradient
+                  colors={bandGradient(kcalBand(d.kcal, target))}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 0, y: 1 }}
+                  style={[styles.bar, { height: h, borderRadius: 8 }]}
+                />
               ) : (
                 <View style={[styles.bar, styles.barEmpty, { height: h, borderRadius: 8 }]} />
               )}
@@ -91,21 +98,16 @@ function MonthBars({ month, target }: { month: RangeInsights; target: number | n
       {month.series.map((d) => {
         const h = Math.max(2, (d.kcal / max) * MAX_H);
         const hasData = d.kcal > 0;
-        const isOver = target !== null && d.kcal > target + 100;
         return (
           <View key={d.date} style={styles.monthBarCol}>
             <View style={[styles.monthBarTrack, { height: MAX_H }]}>
               {hasData ? (
-                isOver ? (
-                  <View style={[styles.monthBar, styles.barOver, { height: h }]} />
-                ) : (
-                  <LinearGradient
-                    colors={[D.accent2, D.accent]}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 0, y: 1 }}
-                    style={[styles.monthBar, { height: h }]}
-                  />
-                )
+                <LinearGradient
+                  colors={bandGradient(kcalBand(d.kcal, target))}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 0, y: 1 }}
+                  style={[styles.monthBar, { height: h }]}
+                />
               ) : (
                 <View style={[styles.monthBar, styles.barEmpty, { height: h }]} />
               )}

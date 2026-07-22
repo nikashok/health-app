@@ -2,7 +2,7 @@
 // the extracted components render byte-identically — no keys renamed, split, or dropped.
 import { StyleSheet } from 'react-native';
 
-import { colors, dark as D } from '@/ui/theme';
+import { dark as D } from '@/ui/theme';
 
 export const styles = StyleSheet.create({
   root: {
@@ -342,6 +342,11 @@ export const styles = StyleSheet.create({
     fontSize: 13,
     color: D.muted,
   },
+  trendAsOf: {
+    fontSize: 11,
+    color: D.label,
+    marginTop: 1,
+  },
 
   // Week bars
   weekCard: {
@@ -381,10 +386,6 @@ export const styles = StyleSheet.create({
   },
   barEmpty: {
     backgroundColor: 'rgba(255,255,255,0.09)',
-  },
-  barOver: {
-    backgroundColor: colors.rose,
-    borderRadius: 8,
   },
   barDayLabel: {
     fontSize: 11,

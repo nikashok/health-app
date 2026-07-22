@@ -1,7 +1,7 @@
 /**
  * Unit tests for week/month insight rollups.
  */
-import { addDays, buildRangeInsights, dateRange, ratio } from './insights';
+import { addDays, buildRangeInsights, dateRange, kcalBand, ratio } from './insights';
 
 describe('date math', () => {
   test('addDays handles month/year boundaries', () => {
@@ -49,6 +49,24 @@ describe('buildRangeInsights', () => {
     const full: Record<string, number> = {};
     for (const d of dateRange('2026-06-20', 7)) full[d] = 1500;
     expect(buildRangeInsights(full, '2026-06-20', 7, 2000).partial).toBe(false);
+  });
+});
+
+describe('kcalBand', () => {
+  test('within ±100 kcal of target is on target, inclusive at the edges', () => {
+    expect(kcalBand(2000, 2000)).toBe('on');
+    expect(kcalBand(2100, 2000)).toBe('on');
+    expect(kcalBand(1900, 2000)).toBe('on');
+  });
+
+  test('more than 100 over / under', () => {
+    expect(kcalBand(2101, 2000)).toBe('over');
+    expect(kcalBand(1899, 2000)).toBe('under');
+  });
+
+  test('no target → null', () => {
+    expect(kcalBand(2000, null)).toBeNull();
+    expect(kcalBand(2000, 0)).toBeNull();
   });
 });
 

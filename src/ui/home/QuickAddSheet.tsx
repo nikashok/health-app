@@ -1,27 +1,31 @@
+import dayjs from 'dayjs';
 import { Modal, Pressable, Text, View } from 'react-native';
 
 import type { BodyMeasurement } from '@/types/db';
 import { dark as D } from '@/ui/theme';
 
-import { inferMeal, type HomeRouter } from './homeUtils';
+import { inferMeal, latestMeasured, type HomeRouter } from './homeUtils';
 import { styles } from './styles';
 
 /** Bottom-sheet of quick-add tiles (log food, weight, waist, diary). */
 export function QuickAddSheet({
   visible,
   onClose,
-  measurement,
+  allMeasurements,
   todayISO,
   router,
   insetsBottom,
 }: {
   visible: boolean;
   onClose: () => void;
-  measurement: BodyMeasurement | null;
+  allMeasurements: BodyMeasurement[];
   todayISO: string;
   router: HomeRouter;
   insetsBottom: number;
 }) {
+  // Last recorded reading, not just today's — the tiles always show something once logged.
+  const weight = latestMeasured(allMeasurements, 'weight_kg');
+  const waist = latestMeasured(allMeasurements, 'waist_cm');
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <Pressable style={styles.overlay} onPress={onClose}>
@@ -51,7 +55,7 @@ export function QuickAddSheet({
             />
             <QuickTile
               label="Weight"
-              sub={measurement?.weight_kg ? `Last ${measurement.weight_kg} kg` : 'Log today'}
+              sub={weight ? `${weight.value} kg · ${dayLabel(weight.date, todayISO)}` : 'Log today'}
               iconBg="rgba(59,201,255,0.18)"
               iconColor="#3bc9ff"
               tileBg="rgba(255,255,255,0.05)"
@@ -63,7 +67,7 @@ export function QuickAddSheet({
             />
             <QuickTile
               label="Waist"
-              sub={measurement?.waist_cm ? `Last ${measurement.waist_cm} cm` : 'Log today'}
+              sub={waist ? `${waist.value} cm · ${dayLabel(waist.date, todayISO)}` : 'Log today'}
               iconBg="rgba(52,224,161,0.18)"
               iconColor="#34e0a1"
               tileBg="rgba(255,255,255,0.05)"
@@ -90,6 +94,11 @@ export function QuickAddSheet({
       </Pressable>
     </Modal>
   );
+}
+
+/** "Today" for the current day, otherwise the short date the reading came from. */
+function dayLabel(date: string, todayISO: string): string {
+  return date === todayISO ? 'Today' : dayjs(date).format('D MMM');
 }
 
 function QuickTile({

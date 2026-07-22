@@ -75,6 +75,28 @@ export function buildRangeInsights(
   };
 }
 
+/** Where a day's intake sits relative to target. */
+export type KcalBand = 'over' | 'under' | 'on';
+
+/**
+ * Classify a day's kcal against the target using an absolute band (default ±100 kcal):
+ * more than `band` above → 'over', more than `band` below → 'under', otherwise 'on'.
+ * Returns null when there is no target to compare against.
+ *
+ * This is the *display* band used to colour intake bars; `daysOnTarget` above uses its
+ * own proportional tolerance and is deliberately left alone.
+ */
+export function kcalBand(
+  kcal: number,
+  target: number | null | undefined,
+  band = 100
+): KcalBand | null {
+  if (target == null || target <= 0) return null;
+  if (kcal > target + band) return 'over';
+  if (kcal < target - band) return 'under';
+  return 'on';
+}
+
 /** Progress ratio (0..n) of a consumed value against a target. 0 when no target. */
 export function ratio(consumed: number, target: number | null | undefined): number {
   return target != null && target > 0 ? consumed / target : 0;

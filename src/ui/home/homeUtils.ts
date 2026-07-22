@@ -36,7 +36,6 @@ export interface HomeState {
   today: LogEntry[];
   week: RangeInsights;
   monthMap: Record<string, number>;
-  measurement: BodyMeasurement | null;
   recentMeasurements: BodyMeasurement[];
   allMeasurements: BodyMeasurement[];
 }
@@ -76,6 +75,36 @@ export function computeStreak(monthMap: Record<string, number>, today: string): 
 export function getDayInitial(isoDate: string): string {
   const day = new Date(`${isoDate}T00:00:00Z`).getUTCDay();
   return ['S', 'M', 'T', 'W', 'T', 'F', 'S'][day];
+}
+
+/**
+ * Most recent recorded value of a measurement field, with the day it was recorded.
+ * Weight and waist are logged independently, so each field is carried forward from its
+ * own last non-null entry — a day with only a waist reading doesn't blank out weight.
+ * @param all measurements oldest-first (as returned by getAllMeasurements)
+ */
+export function latestMeasured(
+  all: BodyMeasurement[],
+  key: 'weight_kg' | 'waist_cm'
+): { value: number; date: string } | null {
+  for (let i = all.length - 1; i >= 0; i--) {
+    const v = all[i][key];
+    if (v != null) return { value: v, date: all[i].measured_on };
+  }
+  return null;
+}
+
+/**
+ * Hold the last known reading across days with no entry, so a sparkline stays flat
+ * instead of dropping to the baseline. Leading gaps (before the first ever reading)
+ * stay 0, which buildSparkPoints already treats as "no data".
+ */
+export function carryForward(values: (number | null)[]): number[] {
+  let last = 0;
+  return values.map((v) => {
+    if (v != null && v > 0) last = v;
+    return last;
+  });
 }
 
 export function buildSparkPoints(values: number[], W: number, H: number): string {
