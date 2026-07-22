@@ -97,6 +97,9 @@ export default function EditEntryScreen() {
     };
   }, [entryId]);
 
+  // Match the log screen: 10 g jumps for grams, 1 for unit measures.
+  const qtyStep = selected?.measure_name === 'grams' ? 10 : 1;
+
   const quantity = parseFloat(qty);
   const preview = useMemo(() => {
     if (!food || !selected || !(quantity > 0)) return null;
@@ -188,7 +191,7 @@ export default function EditEntryScreen() {
       <GroupHeader>Quantity</GroupHeader>
       <Card>
         <FieldRow label="Quantity" first>
-          <Stepper value={qty} onChange={setQty} step={1} />
+          <Stepper value={qty} onChange={setQty} step={qtyStep} />
         </FieldRow>
       </Card>
 

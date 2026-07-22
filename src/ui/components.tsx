@@ -172,6 +172,10 @@ export function Chip({
 /**
  * iOS stepper with an editable value. The ± buttons nudge by `step`; the value is
  * also directly editable so decimal quantities (e.g. 1.5 rotis) stay possible.
+ *
+ * A `step` above 1 snaps to the nearest multiple, so 10 g jumps land on 10/20/30 rather
+ * than trailing whatever was typed (1 → 11 → 21). `step` of 1 adds and subtracts plainly,
+ * leaving decimal quantities alone.
  */
 export function Stepper({
   value,
@@ -189,6 +193,12 @@ export function Stepper({
     const clamped = Math.max(min, Math.round(n * 100) / 100);
     onChange(String(clamped));
   };
+  const nudge = (dir: 1 | -1) => {
+    const from = Number.isFinite(current) ? current : 0;
+    if (step <= 1) return set(from + dir * step);
+    const grid = dir === 1 ? Math.floor(from / step) : Math.ceil(from / step);
+    set((grid + dir) * step);
+  };
   return (
     <View style={styles.stepper}>
       <TextInput
@@ -201,7 +211,7 @@ export function Stepper({
       />
       <View style={styles.stepperControls}>
         <Pressable
-          onPress={() => set((Number.isFinite(current) ? current : 0) - step)}
+          onPress={() => nudge(-1)}
           style={({ pressed }) => [styles.stepperBtn, pressed && styles.stepperBtnOn]}
           hitSlop={6}
         >
@@ -209,7 +219,7 @@ export function Stepper({
         </Pressable>
         <View style={styles.stepperSep} />
         <Pressable
-          onPress={() => set((Number.isFinite(current) ? current : 0) + step)}
+          onPress={() => nudge(1)}
           style={({ pressed }) => [styles.stepperBtn, pressed && styles.stepperBtnOn]}
           hitSlop={6}
         >

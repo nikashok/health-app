@@ -10,16 +10,16 @@ import { getMeasures, type MeasureOption } from '@/db/measures';
 import { getByCodeAndTable, type SearchResult } from '@/db/search';
 import type { FoodKind } from '@/db/searchSql';
 import type { MealType } from '@/types/db';
-import { Card, Chip, FieldRow, GroupHeader, PrimaryButton, Stepper } from '@/ui/components';
+import { Card, Chip, FieldRow, GroupHeader, PrimaryButton, Segmented, Stepper } from '@/ui/components';
 import { grams, numberText } from '@/ui/format';
 import { colors, radius, type } from '@/ui/theme';
 
-const MEAL_LABELS: Record<MealType, string> = {
-  breakfast: 'Breakfast',
-  lunch: 'Lunch',
-  snack: 'Snack',
-  dinner: 'Dinner',
-};
+const MEAL_OPTS: { value: MealType; label: string }[] = [
+  { value: 'breakfast', label: 'Breakfast' },
+  { value: 'lunch', label: 'Lunch' },
+  { value: 'snack', label: 'Snack' },
+  { value: 'dinner', label: 'Dinner' },
+];
 
 export default function LogEntryScreen() {
   const router = useRouter();
@@ -29,10 +29,12 @@ export default function LogEntryScreen() {
     meal?: MealType;
     date?: string;
   }>();
-  const meal = params.meal ?? 'breakfast';
   const date = params.date ?? today();
   const isPlan = date > today();
 
+  // The caller's meal (inferred from the time of day) is only a starting point — it is
+  // editable here so the meal is always a deliberate choice before the entry is saved.
+  const [meal, setMeal] = useState<MealType>(params.meal ?? 'breakfast');
   const [food, setFood] = useState<SearchResult | null | undefined>(undefined);
   const [measures, setMeasures] = useState<MeasureOption[]>([]);
   const [selected, setSelected] = useState<MeasureOption | null>(null);
@@ -69,6 +71,10 @@ export default function LogEntryScreen() {
       };
     }, [params.code, params.table])
   );
+
+  // Grams move in 10 g jumps; unit measures (bowl, roti) still nudge one at a time —
+  // "+10 bowls" is never what you want.
+  const qtyStep = selected?.measure_name === 'grams' ? 10 : 1;
 
   const quantity = parseFloat(qty);
   const quantityError = qty.trim().length > 0 && !(quantity > 0) ? 'Enter a quantity above 0.' : null;
@@ -129,7 +135,7 @@ export default function LogEntryScreen() {
       </View>
       <Text style={styles.name}>{food.name}</Text>
       <Text style={styles.meta}>
-        {numberText(food.energy_kcal)} Cal/100g · {MEAL_LABELS[meal]} · {dayjs(date).format('D MMM YYYY')}
+        {numberText(food.energy_kcal)} Cal/100g · {dayjs(date).format('D MMM YYYY')}
       </Text>
 
       {isPlan ? (
@@ -140,6 +146,9 @@ export default function LogEntryScreen() {
           </Text>
         </Card>
       ) : null}
+
+      <GroupHeader>Meal</GroupHeader>
+      <Segmented options={MEAL_OPTS} value={meal} onChange={setMeal} />
 
       <GroupHeader>Measure</GroupHeader>
       <View style={styles.chips}>
@@ -156,7 +165,7 @@ export default function LogEntryScreen() {
       <GroupHeader>Quantity</GroupHeader>
       <Card>
         <FieldRow label="Quantity" first>
-          <Stepper value={qty} onChange={setQty} step={1} />
+          <Stepper value={qty} onChange={setQty} step={qtyStep} />
         </FieldRow>
       </Card>
       {quantityError ? <Text style={styles.errorText}>{quantityError}</Text> : null}
