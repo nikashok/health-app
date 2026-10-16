@@ -2,8 +2,10 @@ import { Pressable, Text, View } from 'react-native';
 
 import { MEAL_ORDER, mealConsumedKcal } from '@/calc/dayTotals';
 import type { LogEntry } from '@/types/db';
+import { Card, Chevron, Row } from '@/ui/components';
+import { int } from '@/ui/format';
 
-import { MEAL_COLORS, MEAL_LABELS, type HomeRouter } from './homeUtils';
+import { MEAL_LABELS, type HomeRouter } from './homeUtils';
 import { styles } from './styles';
 
 /** Per-meal summary rows for today, with a link through to the diary. */
@@ -17,50 +19,49 @@ export function TodayMeals({
   router: HomeRouter;
 }) {
   return (
-    <View style={styles.section}>
-      <View style={styles.sectionHeaderRow}>
-        <Text style={[styles.sectionLabel, styles.sectionLabelNoGap]}>Today's meals</Text>
-        <Pressable onPress={() => router.push('/diary')}>
-          <Text style={styles.sectionLink}>View diary ›</Text>
+    <View>
+      <View style={styles.sectionHead}>
+        <Text style={styles.sectionTitle}>Meals</Text>
+        <Pressable onPress={() => router.push('/diary')} hitSlop={8}>
+          <Text style={styles.sectionLink}>Diary</Text>
         </Pressable>
       </View>
-      <View style={[styles.card, styles.mealsCard]}>
+      <Card>
         {MEAL_ORDER.map((meal, i) => {
-          const items = today.filter(
-            (e) => e.meal_type === meal && e.status === 'logged'
-          );
+          const items = today.filter((e) => e.meal_type === meal && e.status === 'logged');
           const kcal = mealConsumedKcal(today, meal);
-          const sub =
-            items.length > 0
-              ? items
-                  .slice(0, 2)
-                  .map((e) => e.food_name)
-                  .join(' · ')
-              : 'Nothing logged yet';
+          const empty = items.length === 0;
           return (
-            <Pressable
+            <Row
               key={meal}
-              style={[styles.mealRow, i < MEAL_ORDER.length - 1 && styles.mealRowDivider]}
+              first={i === 0}
+              // A meal with food opens today's diary to see/edit it; an empty one goes to Add Food.
               onPress={() =>
-                router.push({ pathname: '/log', params: { meal, date: todayISO } })
+                empty
+                  ? router.push({ pathname: '/log', params: { meal, date: todayISO, origin: 'home' } })
+                  : router.push({ pathname: '/diary', params: { date: todayISO } })
               }
+              contentStyle={styles.mealRow}
             >
-              <View
-                style={[styles.mealDot, { backgroundColor: MEAL_COLORS[meal] }]}
-              />
               <View style={styles.mealInfo}>
                 <Text style={styles.mealName}>{MEAL_LABELS[meal]}</Text>
                 <Text style={styles.mealSub} numberOfLines={1}>
-                  {sub}
+                  {empty ? 'Nothing logged yet' : items.map((e) => e.food_name).join(' · ')}
                 </Text>
               </View>
-              <Text style={styles.mealKcal}>{Math.round(kcal)}</Text>
-              <Text style={styles.mealKcalUnit}> kcal</Text>
-              <Text style={styles.mealChevron}>›</Text>
-            </Pressable>
+              {empty ? (
+                <Text style={styles.mealAdd}>Add</Text>
+              ) : (
+                <Text style={styles.mealKcal}>
+                  {int(kcal)}
+                  <Text style={styles.mealKcalUnit}> kcal</Text>
+                </Text>
+              )}
+              <Chevron />
+            </Row>
           );
         })}
-      </View>
+      </Card>
     </View>
   );
 }

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { KeyboardAvoidingView, Platform, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Image, KeyboardAvoidingView, Platform, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { supabase } from '@/db/supabase';
@@ -48,20 +48,26 @@ export function AuthScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         <View style={styles.content}>
+          <Image
+            source={require('../../assets/images/icon.png')}
+            style={styles.icon}
+            accessibilityLabel="Nutrition Tracker"
+          />
           <Text style={styles.title}>Nutrition Tracker</Text>
           <Text style={styles.sub}>
             Sign in to your private diary. It syncs across your devices.
           </Text>
 
           <Card>
-            <Row first>
+            <Row first minHeight={50}>
               <Text style={styles.label}>Email</Text>
               <TextInput
                 style={styles.input}
                 value={email}
                 onChangeText={setEmail}
                 placeholder="you@example.com"
-                placeholderTextColor={colors.faint}
+                placeholderTextColor={colors.placeholder}
+                selectionColor={colors.leaf}
                 autoCapitalize="none"
                 autoCorrect={false}
                 keyboardType="email-address"
@@ -70,14 +76,15 @@ export function AuthScreen() {
                 onSubmitEditing={onSubmit}
               />
             </Row>
-            <Row>
+            <Row minHeight={50}>
               <Text style={styles.label}>Password</Text>
               <TextInput
                 style={styles.input}
                 value={password}
                 onChangeText={setPassword}
                 placeholder="Your password"
-                placeholderTextColor={colors.faint}
+                placeholderTextColor={colors.placeholder}
+                selectionColor={colors.leaf}
                 autoCapitalize="none"
                 autoCorrect={false}
                 secureTextEntry
@@ -90,9 +97,10 @@ export function AuthScreen() {
           {error ? <Text style={styles.error}>{error}</Text> : null}
 
           <PrimaryButton
-            title={busy ? 'Signing in…' : 'Sign in'}
+            title={busy ? 'Signing in…' : 'Sign In'}
             onPress={onSubmit}
             disabled={!canSubmit}
+            hint={!busy ? 'Enter your email and password (at least 6 characters).' : null}
             style={styles.submit}
           />
         </View>
@@ -103,11 +111,28 @@ export function AuthScreen() {
 
 const styles = StyleSheet.create({
   flex: { flex: 1, backgroundColor: colors.bg },
-  content: { flex: 1, justifyContent: 'center', padding: 16 },
+  content: { flex: 1, justifyContent: 'center', paddingHorizontal: 16, paddingBottom: 60 },
+  icon: {
+    width: 96,
+    height: 96,
+    borderRadius: 22,
+    alignSelf: 'center',
+    marginBottom: 20,
+    borderWidth: 0.5,
+    borderColor: 'rgba(255,255,255,0.12)',
+  },
   title: { ...type.largeTitle, color: colors.ink, textAlign: 'center' },
-  sub: { ...type.subhead, color: colors.muted, textAlign: 'center', marginTop: 6, marginBottom: 24, lineHeight: 20 },
+  sub: {
+    ...type.subhead,
+    color: colors.muted,
+    textAlign: 'center',
+    marginTop: 6,
+    marginBottom: 28,
+    marginHorizontal: 24,
+    lineHeight: 20,
+  },
   label: { ...type.body, color: colors.ink, marginRight: 12, minWidth: 84 },
   input: { ...type.body, color: colors.ink, flex: 1, textAlign: 'right', paddingVertical: 0 },
   error: { ...type.footnote, color: colors.rose, marginTop: 10, marginHorizontal: 16 },
-  submit: { marginTop: 22 },
+  submit: { marginTop: 24 },
 });

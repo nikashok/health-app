@@ -1,46 +1,76 @@
 import { Platform, type TextStyle } from 'react-native';
 
 /**
- * Vital Dark design language. All surfaces, separators, and label colours follow the
- * dark palette introduced in the Vital Dark Home redesign. Token names are kept stable
- * so every screen continues to work; only the values underneath changed.
+ * True Black Vivid design language: pure black base, solid #1c1c1e inset cards, blue
+ * for every interactive element, orange for calories, and a fixed colour per macro.
+ * Token names are kept stable so every screen keeps working; the values underneath
+ * changed. The neon macro colours are for labels, bars and small accents only — never
+ * body text.
  */
 export const colors = {
   // Surfaces
-  bg: '#0a0a0d',
-  surface: 'rgba(255,255,255,0.045)' as string,     // card background
-  surfaceAlt: 'rgba(255,255,255,0.03)' as string,   // nested wells
-  fill: 'rgba(255,255,255,0.06)' as string,         // search fields, segmented track
-  fillStrong: 'rgba(255,255,255,0.09)' as string,   // stepper bg, pressed state
+  bg: '#000000',
+  surface: '#1c1c1e',        // card background
+  surfaceAlt: '#1c1c1e',     // nested wells
+  fill: '#2c2c2e',           // inner fill, tracks, pressed rows
+  fillStrong: '#2c2c2e',     // stepper bg
 
   // Text
-  ink: '#f2f2f4',
-  muted: 'rgba(235,235,245,0.55)' as string,
-  faint: 'rgba(235,235,245,0.35)' as string,        // placeholders
+  ink: '#ffffff',
+  muted: '#8e8e93',
+  faint: '#48484a',          // chevrons, decorative only
+  placeholder: '#636366',    // input placeholders — readable, but clearly not a value
 
   // Borders / hairlines
-  line: 'rgba(255,255,255,0.07)' as string,         // card border, row divider
-  lineStrong: 'rgba(255,255,255,0.12)' as string,   // stepper separator
+  line: '#38383a',           // hairline row separator
+  lineStrong: '#636366',     // stepper divider, target line
 
-  // Brand accent — amber
-  leaf: '#ffb454',
-  leafDark: '#ffd08a',
-  mint: 'rgba(255,180,84,0.12)' as string,
+  // Action — blue
+  leaf: '#0a84ff',
+  leafDark: '#0a84ff',       // tint text
+  mint: '#0a2a4d',           // tint background
 
-  // Warning / over-target — amber
-  saffron: '#ffb454',
-  saffronBg: 'rgba(255,170,70,0.12)' as string,
-  saffronLine: 'rgba(255,170,70,0.30)' as string,
+  // Plan / warning — orange
+  saffron: '#ff6a1a',
+  saffronBg: 'rgba(255,106,26,0.16)' as string,
+  saffronLine: 'rgba(255,106,26,0.30)' as string,
 
-  // Info — cyan
-  sky: '#3bc9ff',
-  skyBg: 'rgba(59,201,255,0.12)' as string,
-
-  // Error
-  rose: '#ff6b6b',
+  // Error / destructive
+  rose: '#ff453a',
 
   // Disabled
   disabled: 'rgba(255,255,255,0.18)' as string,
+
+  // Energy (calories)
+  energy: '#ff6a1a',
+  energyTrack: '#3a1d0c',
+
+  // Macros
+  protein: '#fa2d5a',
+  carbs: '#b4f000',
+  fat: '#00d8e8',
+  fibre: '#a55cf5',
+
+  // Status
+  good: '#30d158',           // on target, backed up, body metrics
+  over: '#ff453a',
+
+  // Controls
+  separator: '#38383a',
+  segmentOn: '#636366',
+  chevron: '#48484a',
+  switchOff: '#39393d',
+
+  // Calorie trend bars: within ±100 kcal of target = the app's status green, more than
+  // 100 over = the app's status red, more than 100 under = a pale tint of the same green.
+  trendOn: '#30d158',
+  trendOver: '#ff453a',
+  trendUnder: '#97e8ab',
+
+  // Planned entries
+  plannedRow: 'rgba(255,106,26,0.08)' as string,
+  plannedPillBg: 'rgba(255,106,26,0.16)' as string,
+  plannedPillText: '#ff8a4a',
 };
 
 export const radius = {
@@ -50,14 +80,6 @@ export const radius = {
   pill: 999,
 };
 
-export const shadow = {
-  shadowColor: '#000000',
-  shadowOpacity: 0.35,
-  shadowRadius: 16,
-  shadowOffset: { width: 0, height: 8 },
-  elevation: 8,
-};
-
 export const spacing = {
   screen: 16,
   gutter: 16,
@@ -65,10 +87,16 @@ export const spacing = {
 
 export const systemFont = Platform.select({ ios: undefined, default: 'System' as const });
 
+/** Rounded system face for large numbers (SF Rounded on Apple web; plain System elsewhere). */
+export const roundedFont = Platform.select({
+  web: 'ui-rounded, -apple-system, system-ui, sans-serif',
+  default: undefined,
+});
+
 export const type = {
-  largeTitle: { fontSize: 34, fontWeight: '700', letterSpacing: 0.37 },
+  largeTitle: { fontSize: 34, fontWeight: '700', letterSpacing: 0.37, lineHeight: 41 },
   title1: { fontSize: 28, fontWeight: '700', letterSpacing: 0.36 },
-  title2: { fontSize: 22, fontWeight: '700' },
+  title2: { fontSize: 22, fontWeight: '700', letterSpacing: 0.35 },
   title3: { fontSize: 20, fontWeight: '600' },
   headline: { fontSize: 17, fontWeight: '600' },
   body: { fontSize: 17, fontWeight: '400' },
@@ -78,36 +106,17 @@ export const type = {
   caption: { fontSize: 12, fontWeight: '400' },
 } as const satisfies Record<string, TextStyle>;
 
+/** A big rounded number (hero kcal, macro values, trend values). */
+export function heroNumber(fontSize: number, fontWeight: TextStyle['fontWeight'] = '600'): TextStyle {
+  return {
+    fontFamily: roundedFont,
+    fontSize,
+    fontWeight,
+    color: colors.ink,
+    fontVariant: ['tabular-nums'],
+  };
+}
+
 export function clampPercent(value: number): `${number}%` {
   return `${Math.max(0, Math.min(1, value)) * 100}%`;
 }
-
-/**
- * Dark ("Vital") theme — extended tokens used by the home screen and available
- * for any component that needs accent-colour variants beyond the base palette.
- */
-export const dark = {
-  bg: colors.bg,
-  card: colors.surface,
-  border: colors.line,
-  divider: 'rgba(255,255,255,0.05)' as string,
-  trackBg: colors.fill,
-  ink: colors.ink,
-  muted: colors.muted,
-  label: 'rgba(235,235,245,0.42)' as string,
-  accent: '#ffb454',
-  accent2: '#ffd08a',
-  cyan: '#2bb8f0',
-  cyan2: '#74e0ff',
-  green: '#22c98a',
-  green2: '#6cf0bb',
-  red: '#ff5f56',
-  red2: '#ff8f88',
-  yellow: '#ffd23f',
-  yellow2: '#ffe58a',
-  orange: '#ff7a4d',
-  orange2: '#ffb454',
-  amber: '#ffb454',
-  amber2: '#ffd08a',
-  glow: 'rgba(255,180,84,0.18)' as string,
-};

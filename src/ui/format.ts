@@ -9,3 +9,8 @@ export function grams(n: number | null | undefined): string {
 export function numberText(n: number | null | undefined): string {
   return n != null ? String(Math.round(n)) : '—';
 }
+
+/** A whole number with thousands separators ("2,000"). */
+export function int(n: number): string {
+  return Math.round(n).toLocaleString('en-IN');
+}

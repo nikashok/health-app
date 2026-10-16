@@ -1,4 +1,4 @@
-import { useRouter } from 'expo-router';
+import { Stack, useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 
@@ -11,8 +11,11 @@ import {
   type Targets,
 } from '@/calc/targets';
 import { getProfile, saveProfile } from '@/db/profile';
-import { Card, Chip, GroupFooter, GroupHeader, PrimaryButton, Row, Segmented } from '@/ui/components';
-import { colors, type } from '@/ui/theme';
+import { Card, Chip, formScrollProps, GroupFooter, GroupHeader, PrimaryButton, Row, Segmented } from '@/ui/components';
+import { int } from '@/ui/format';
+import { HomeButton } from '@/ui/HomeButton';
+import { showToast } from '@/ui/toast';
+import { colors, heroNumber, type } from '@/ui/theme';
 
 const SEXES: { value: Sex; label: string }[] = [
   { value: 'male', label: 'Male' },
@@ -30,11 +33,11 @@ const GOALS: { value: Goal; label: string }[] = [
   { value: 'maintain', label: 'Maintain' },
   { value: 'gain', label: 'Gain' },
 ];
-const TARGET_FIELDS: { key: keyof Targets; label: string; suffix: string }[] = [
-  { key: 'target_kcal', label: 'Calories', suffix: 'Cal' },
-  { key: 'target_protein_g', label: 'Protein', suffix: 'g' },
-  { key: 'target_carb_g', label: 'Carbs', suffix: 'g' },
-  { key: 'target_fat_g', label: 'Fat', suffix: 'g' },
+const TARGET_FIELDS: { key: keyof Targets; label: string; suffix: string; color: string }[] = [
+  { key: 'target_kcal', label: 'Calories', suffix: 'kcal', color: colors.energy },
+  { key: 'target_protein_g', label: 'Protein', suffix: 'g', color: colors.protein },
+  { key: 'target_carb_g', label: 'Carbs', suffix: 'g', color: colors.carbs },
+  { key: 'target_fat_g', label: 'Fat', suffix: 'g', color: colors.fat },
 ];
 
 export default function OnboardingScreen() {
@@ -56,10 +59,14 @@ export default function OnboardingScreen() {
     target_fat_g: '',
   });
   const [saving, setSaving] = useState(false);
+  const [touched, setTouched] = useState(false);
+  // First run (no profile yet) has no Home to return to — it redirects straight back here.
+  const [hasProfile, setHasProfile] = useState(false);
 
   useEffect(() => {
     getProfile().then((p) => {
       if (!p) return;
+      setHasProfile(true);
       if (p.sex) setSex(p.sex as Sex);
       if (p.age != null) setAge(String(p.age));
       if (p.height_cm != null) setHeight(String(p.height_cm));
@@ -81,6 +88,10 @@ export default function OnboardingScreen() {
   const ageNum = parseFloat(age);
   const heightNum = parseFloat(height);
   const weightNum = parseFloat(weight);
+  const touch = (set: (v: string) => void) => (v: string) => {
+    setTouched(true);
+    set(v);
+  };
   const formError = firstFormError({ sex, ageNum, heightNum, weightNum, activity, goal });
 
   const profileInput = useMemo<ProfileInput | null>(() => {
@@ -133,6 +144,7 @@ export default function OnboardingScreen() {
         targets_source: override ? 'manual' : 'computed',
         ...targets,
       });
+      showToast('Targets saved');
       router.replace('/');
     } finally {
       setSaving(false);
@@ -144,7 +156,9 @@ export default function OnboardingScreen() {
       style={styles.screen}
       contentContainerStyle={styles.content}
       contentInsetAdjustmentBehavior="automatic"
+      {...formScrollProps}
     >
+      <Stack.Screen options={{ headerRight: hasProfile ? () => <HomeButton /> : () => null }} />
       <Text style={styles.sub}>
         Your details stay on this device and are used only to estimate calories and macros.
       </Text>
@@ -154,9 +168,9 @@ export default function OnboardingScreen() {
 
       <GroupHeader>You</GroupHeader>
       <Card>
-        <NumRow first label="Age" value={age} onChangeText={setAge} placeholder="30" />
-        <NumRow label="Height" value={height} onChangeText={setHeight} placeholder="170" suffix="cm" />
-        <NumRow label="Weight" value={weight} onChangeText={setWeight} placeholder="70" suffix="kg" />
+        <NumRow first label="Age" value={age} onChangeText={touch(setAge)} placeholder="30" />
+        <NumRow label="Height" value={height} onChangeText={touch(setHeight)} placeholder="170" suffix="cm" />
+        <NumRow label="Weight" value={weight} onChangeText={touch(setWeight)} placeholder="70" suffix="kg" />
       </Card>
 
       <GroupHeader>Activity level</GroupHeader>
@@ -176,9 +190,9 @@ export default function OnboardingScreen() {
           <Switch
             value={override}
             onValueChange={toggleOverride}
-            trackColor={{ false: colors.lineStrong, true: colors.leaf }}
+            trackColor={{ false: colors.switchOff, true: colors.good }}
             thumbColor="#ffffff"
-            ios_backgroundColor={colors.lineStrong}
+            ios_backgroundColor={colors.switchOff}
           />
         </View>
       </View>
@@ -186,14 +200,18 @@ export default function OnboardingScreen() {
       <Card>
         {!profileInput ? (
           <Row first>
-            <Text style={styles.hint}>{formError ?? 'Fill in your profile to see targets.'}</Text>
+            {/* Neutral until a field has been edited — no error before you've typed anything. */}
+            <Text style={[styles.hint, !touched && styles.hintNeutral]}>
+              {touched && formError ? formError : 'Fill in your age, height and weight to see targets.'}
+            </Text>
           </Row>
         ) : override ? (
-          TARGET_FIELDS.map(({ key, label, suffix }, i) => (
+          TARGET_FIELDS.map(({ key, label, suffix, color }, i) => (
             <NumRow
               key={key}
               first={i === 0}
               label={label}
+              labelColor={color}
               value={manualTargets[key]}
               onChangeText={(t) => setManualTargets((m) => ({ ...m, [key]: t }))}
               placeholder="0"
@@ -201,23 +219,28 @@ export default function OnboardingScreen() {
             />
           ))
         ) : (
-          TARGET_FIELDS.map(({ key, label, suffix }, i) => (
-            <Row key={key} first={i === 0}>
-              <Text style={styles.targetLabel}>{label}</Text>
-              <Text style={[styles.targetValue, key === 'target_kcal' && styles.targetHero]}>
-                {computed![key]} <Text style={styles.targetSuffix}>{suffix}</Text>
-              </Text>
-            </Row>
-          ))
+          TARGET_FIELDS.map(({ key, label, suffix, color }, i) => {
+            const hero = key === 'target_kcal';
+            return (
+              <Row key={key} first={i === 0} minHeight={hero ? 52 : 44}>
+                <Text style={[styles.targetLabel, { color }]}>{label}</Text>
+                <Text style={[styles.targetValue, hero && styles.targetHero]}>
+                  {hero ? int(computed![key]) : computed![key]}{' '}
+                  <Text style={styles.targetSuffix}>{suffix}</Text>
+                </Text>
+              </Row>
+            );
+          })
         )}
       </Card>
       {manualError ? <Text style={styles.errorText}>{manualError}</Text> : null}
       <GroupFooter>Use this as a starting point and adjust after you have real logged trends.</GroupFooter>
 
       <PrimaryButton
-        title={saving ? 'Saving…' : 'Save targets'}
+        title={saving ? 'Saving…' : 'Save Targets'}
         onPress={onSave}
         disabled={!canSave || saving}
+        hint={!canSave && !saving ? 'Complete your details above to save.' : null}
         style={styles.save}
       />
     </ScrollView>
@@ -226,6 +249,7 @@ export default function OnboardingScreen() {
 
 function NumRow({
   label,
+  labelColor,
   value,
   onChangeText,
   placeholder,
@@ -233,6 +257,7 @@ function NumRow({
   first,
 }: {
   label: string;
+  labelColor?: string;
   value: string;
   onChangeText: (t: string) => void;
   placeholder?: string;
@@ -241,14 +266,17 @@ function NumRow({
 }) {
   return (
     <Row first={first}>
-      <Text style={styles.fieldLabel}>{label}</Text>
+      <Text style={[styles.fieldLabel, labelColor ? { color: labelColor, fontWeight: '600' } : null]}>
+        {label}
+      </Text>
       <View style={styles.fieldValue}>
         <TextInput
           style={styles.input}
           value={value}
           onChangeText={onChangeText}
           placeholder={placeholder}
-          placeholderTextColor={colors.faint}
+          placeholderTextColor={colors.placeholder}
+          selectionColor={colors.leaf}
           keyboardType="numeric"
           inputMode="decimal"
         />
@@ -287,30 +315,31 @@ function numStr(n: number | null): string {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.bg },
-  content: { padding: 16, paddingBottom: 48 },
-  sub: { ...type.subhead, color: colors.muted, marginBottom: 8, lineHeight: 20 },
+  content: { paddingHorizontal: 16, paddingBottom: 40 },
+  sub: { ...type.subhead, color: colors.muted, lineHeight: 20, paddingHorizontal: 4, marginTop: 6 },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   fieldLabel: { ...type.body, color: colors.ink, marginRight: 12 },
   fieldValue: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 6 },
   input: { ...type.body, color: colors.ink, flex: 1, textAlign: 'right', paddingVertical: 0 },
-  suffix: { ...type.body, color: colors.muted, minWidth: 24 },
+  suffix: { ...type.body, color: colors.muted },
   targetHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginTop: 22,
+    marginTop: 24,
     marginBottom: 7,
     marginLeft: 16,
     marginRight: 4,
   },
-  targetHeaderText: { ...type.footnote, color: colors.muted, letterSpacing: 0.3 },
+  targetHeaderText: { ...type.footnote, color: colors.muted, letterSpacing: 0.2 },
   overrideToggle: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   overrideLabel: { ...type.subhead, color: colors.muted },
   hint: { ...type.subhead, color: colors.saffron, lineHeight: 20, flex: 1 },
-  targetLabel: { ...type.body, color: colors.ink },
-  targetValue: { ...type.body, color: colors.ink, fontWeight: '600' },
-  targetHero: { color: colors.leafDark, fontSize: 22, fontWeight: '700' },
-  targetSuffix: { ...type.subhead, color: colors.muted, fontWeight: '400' },
+  hintNeutral: { color: colors.muted },
+  targetLabel: { ...type.body, fontWeight: '600' },
+  targetValue: { ...type.headline, color: colors.ink },
+  targetHero: { ...heroNumber(22, '700') },
+  targetSuffix: { ...type.subhead, color: colors.muted, fontWeight: '400', fontFamily: undefined },
   errorText: { ...type.footnote, color: colors.rose, marginTop: 8, marginLeft: 16 },
-  save: { marginTop: 20 },
+  save: { marginTop: 24 },
 });

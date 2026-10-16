@@ -1,7 +1,7 @@
 /**
  * Unit tests for week/month insight rollups.
  */
-import { addDays, buildRangeInsights, dateRange, kcalBand, ratio } from './insights';
+import { addDays, buildRangeInsights, dateRange, daysInBand, kcalBand, ratio } from './insights';
 
 describe('date math', () => {
   test('addDays handles month/year boundaries', () => {
@@ -89,6 +89,28 @@ describe('kcalBand', () => {
   test('no target → null', () => {
     expect(kcalBand(2000, null)).toBeNull();
     expect(kcalBand(2000, 0)).toBeNull();
+  });
+});
+
+describe('daysInBand', () => {
+  const series = [
+    { date: '2026-06-14', kcal: 2000 },
+    { date: '2026-06-15', kcal: 2100 },
+    { date: '2026-06-16', kcal: 2101 },
+    { date: '2026-06-17', kcal: 1850 },
+    { date: '2026-06-18', kcal: 0 },
+  ];
+
+  test('counts logged days within ±100 kcal, matching kcalBand', () => {
+    expect(daysInBand(series, 2000)).toBe(2);
+  });
+
+  test('an empty day never counts, even with a tiny target', () => {
+    expect(daysInBand([{ date: '2026-06-18', kcal: 0 }], 50)).toBe(0);
+  });
+
+  test('no target → null', () => {
+    expect(daysInBand(series, null)).toBeNull();
   });
 });
 

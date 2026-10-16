@@ -110,6 +110,20 @@ export function kcalBand(
   return 'on';
 }
 
+/**
+ * Logged days whose intake falls in the ±`band` kcal "on target" band — the same rule
+ * `kcalBand` uses to colour the bars, so the count always matches the green bars.
+ * Days with nothing logged are not counted. Returns null when there is no target.
+ */
+export function daysInBand(
+  series: DayKcal[],
+  target: number | null | undefined,
+  band = 100
+): number | null {
+  if (target == null || target <= 0) return null;
+  return series.filter((d) => d.kcal > 0 && kcalBand(d.kcal, target, band) === 'on').length;
+}
+
 /** Progress ratio (0..n) of a consumed value against a target. 0 when no target. */
 export function ratio(consumed: number, target: number | null | undefined): number {
   return target != null && target > 0 ? consumed / target : 0;

@@ -1,6 +1,6 @@
 import dayjs from 'dayjs';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { gramsTotal, snapshotNutrition } from '@/calc/logEntry';
@@ -10,9 +10,23 @@ import { getMeasures, type MeasureOption } from '@/db/measures';
 import { getByCodeAndTable, type SearchResult } from '@/db/search';
 import type { FoodKind } from '@/db/searchSql';
 import type { MealType } from '@/types/db';
-import { Card, Chip, FieldRow, GroupHeader, PrimaryButton, Segmented, Stepper } from '@/ui/components';
-import { grams, numberText } from '@/ui/format';
-import { colors, radius, type } from '@/ui/theme';
+import {
+  Card,
+  CardHeader,
+  Chip,
+  FieldRow,
+  formScrollProps,
+  GroupHeader,
+  Hairline,
+  PrimaryButton,
+  Segmented,
+  Stepper,
+  text,
+} from '@/ui/components';
+import { int, numberText } from '@/ui/format';
+import { showToast } from '@/ui/toast';
+import { initialQty, isGrams, pickerMeasures, qtyForSwitch, qtyStep } from '@/ui/quantity';
+import { colors, heroNumber, type } from '@/ui/theme';
 
 const MEAL_OPTS: { value: MealType; label: string }[] = [
   { value: 'breakfast', label: 'Breakfast' },
@@ -28,6 +42,9 @@ export default function LogEntryScreen() {
     table: FoodKind;
     meal?: MealType;
     date?: string;
+    origin?: string; // 'home' when the flow started on Home
+    lastMeasure?: string; // a recent food's last measure + quantity, to prefill
+    lastQty?: string;
   }>();
   const date = params.date ?? today();
   const isPlan = date > today();
@@ -40,6 +57,7 @@ export default function LogEntryScreen() {
   const [selected, setSelected] = useState<MeasureOption | null>(null);
   const [qty, setQty] = useState('1');
   const [saving, setSaving] = useState(false);
+  const picked = useRef(false);
 
   // Reload on focus so returning from "Edit food details" shows the new values.
   useFocusEffect(
@@ -62,9 +80,24 @@ export default function LogEntryScreen() {
             : null
         );
         if (!active) return;
+        // Grams leads and is selected, unless a custom food has its own saved default.
+        const picker = pickerMeasures(opts, params.table === 'custom');
         setFood(f ?? null);
-        setMeasures(opts);
-        setSelected((prev) => prev ?? opts.find((o) => o.is_default) ?? opts[0] ?? null);
+        setMeasures(picker.options);
+        // Keep the user's choice when refocusing (e.g. back from Edit details).
+        // A recent food starts from how it was last logged, if that measure still exists.
+        if (!picked.current) {
+          picked.current = true;
+          const last = picker.options.find((o) => o.measure_name === params.lastMeasure);
+          const lastQty = parseFloat(params.lastQty ?? '');
+          if (last && lastQty > 0) {
+            setSelected(last);
+            setQty(String(lastQty));
+          } else {
+            setSelected(picker.selected);
+            setQty(initialQty(picker.selected));
+          }
+        }
       })();
       return () => {
         active = false;
@@ -72,9 +105,10 @@ export default function LogEntryScreen() {
     }, [params.code, params.table])
   );
 
-  // Grams move in 10 g jumps; unit measures (bowl, roti) still nudge one at a time —
-  // "+10 bowls" is never what you want.
-  const qtyStep = selected?.measure_name === 'grams' ? 10 : 1;
+  function chooseMeasure(m: MeasureOption) {
+    setQty((q) => qtyForSwitch(selected, m, q));
+    setSelected(m);
+  }
 
   const quantity = parseFloat(qty);
   const quantityError = qty.trim().length > 0 && !(quantity > 0) ? 'Enter a quantity above 0.' : null;
@@ -97,7 +131,11 @@ export default function LogEntryScreen() {
         date,
         status: isPlan ? 'planned' : 'logged',
       });
-      router.replace({ pathname: '/diary', params: { date } });
+      showToast(`${isPlan ? 'Planned' : 'Logged'} ${food.name}`);
+      // Return to where the flow started: Home, or the screen before Add Food (usually Diary).
+      if (params.origin === 'home') router.dismissAll();
+      else if (router.canDismiss()) router.dismiss(2);
+      else router.replace({ pathname: '/diary', params: { date } });
     } finally {
       setSaving(false);
     }
@@ -121,22 +159,24 @@ export default function LogEntryScreen() {
   }
 
   return (
-    <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
-      <View style={styles.titleRow}>
-        <Text style={styles.eyebrow}>{kindLabel(food.kind)}</Text>
-        {food.kind === 'custom' ? (
-          <Pressable
-            onPress={() => router.push({ pathname: '/custom-food', params: { code: food.code } })}
-            hitSlop={8}
-          >
-            <Text style={styles.editLink}>Edit details</Text>
-          </Pressable>
-        ) : null}
+    <ScrollView style={styles.screen} contentContainerStyle={styles.content} {...formScrollProps}>
+      <View style={styles.titleBlock}>
+        <View style={styles.titleRow}>
+          <Text style={styles.eyebrow}>{kindLabel(food.kind).toUpperCase()}</Text>
+          {food.kind === 'custom' ? (
+            <Pressable
+              onPress={() => router.push({ pathname: '/custom-food', params: { code: food.code } })}
+              hitSlop={8}
+            >
+              <Text style={styles.editLink}>Edit details</Text>
+            </Pressable>
+          ) : null}
+        </View>
+        <Text style={styles.name}>{food.name}</Text>
+        <Text style={styles.meta}>
+          {numberText(food.energy_kcal)} kcal/100g · {dayjs(date).format('D MMM YYYY')}
+        </Text>
       </View>
-      <Text style={styles.name}>{food.name}</Text>
-      <Text style={styles.meta}>
-        {numberText(food.energy_kcal)} Cal/100g · {dayjs(date).format('D MMM YYYY')}
-      </Text>
 
       {isPlan ? (
         <Card style={styles.planBanner}>
@@ -156,16 +196,21 @@ export default function LogEntryScreen() {
           <Chip
             key={m.measure_name}
             on={selected?.measure_name === m.measure_name}
-            label={m.measure_name + (m.measure_name !== 'grams' ? ` (${Math.round(m.grams_per_unit)}g)` : '')}
-            onPress={() => setSelected(m)}
+            label={m.measure_name + (!isGrams(m) ? ` (${Math.round(m.grams_per_unit)}g)` : '')}
+            onPress={() => chooseMeasure(m)}
           />
         ))}
       </View>
 
       <GroupHeader>Quantity</GroupHeader>
       <Card>
-        <FieldRow label="Quantity" first>
-          <Stepper value={qty} onChange={setQty} step={qtyStep} />
+        <FieldRow label="Quantity" first minHeight={50}>
+          <Stepper
+            value={qty}
+            onChange={setQty}
+            step={qtyStep(selected)}
+            unit={isGrams(selected) ? 'g' : undefined}
+          />
         </FieldRow>
       </Card>
       {quantityError ? <Text style={styles.errorText}>{quantityError}</Text> : null}
@@ -173,11 +218,19 @@ export default function LogEntryScreen() {
       <Card style={styles.preview}>
         {preview ? (
           <>
-            <Text style={styles.previewLabel}>NUTRITION SNAPSHOT</Text>
-            <Text style={styles.previewKcal}>{Math.round(preview.kcal)} Cal</Text>
-            <Text style={styles.previewMacros}>
-              {grams(preview.grams)} · P {grams(preview.protein_g)} · C {grams(preview.carb_g)} · F {grams(preview.fat_g)}
-            </Text>
+            <CardHeader label="Nutrition" color={colors.energy} detail={`${int(preview.grams)} g`} />
+            <View style={styles.previewRow}>
+              <Text style={styles.previewKcal}>{int(preview.kcal)}</Text>
+              <Text style={text.unit}>kcal</Text>
+            </View>
+            <Hairline style={styles.previewHairline} />
+            <View style={styles.macroCols}>
+              <MacroCol label="Protein" color={colors.protein} value={preview.protein_g} first />
+              <View style={styles.macroSep} />
+              <MacroCol label="Carbs" color={colors.carbs} value={preview.carb_g} />
+              <View style={styles.macroSep} />
+              <MacroCol label="Fat" color={colors.fat} value={preview.fat_g} />
+            </View>
           </>
         ) : (
           <Text style={styles.previewHint}>Choose a measure and quantity to preview.</Text>
@@ -185,12 +238,34 @@ export default function LogEntryScreen() {
       </Card>
 
       <PrimaryButton
-        title={saving ? 'Saving…' : isPlan ? 'Save plan' : 'Log food'}
+        title={saving ? 'Saving…' : isPlan ? 'Save Plan' : 'Log Food'}
         onPress={onSave}
         disabled={!preview || saving}
         style={styles.save}
       />
     </ScrollView>
+  );
+}
+
+function MacroCol({
+  label,
+  color,
+  value,
+  first,
+}: {
+  label: string;
+  color: string;
+  value: number | null;
+  first?: boolean;
+}) {
+  return (
+    <View style={[styles.macroCol, first && styles.macroColFirst]}>
+      <Text style={[styles.macroLabel, { color }]}>{label}</Text>
+      <Text style={styles.macroVal}>
+        {value != null ? Math.round(value) : '—'}
+        <Text style={styles.macroUnit}> g</Text>
+      </Text>
+    </View>
   );
 }
 
@@ -203,33 +278,33 @@ function kindLabel(k: FoodKind): string {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.bg },
-  content: { padding: 16, paddingBottom: 42 },
+  content: { paddingHorizontal: 16, paddingTop: 4, paddingBottom: 40 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, backgroundColor: colors.bg },
   loading: { ...type.subhead, color: colors.muted, marginTop: 12 },
   errorTitle: { ...type.title3, color: colors.ink, marginBottom: 16 },
   errorButton: { alignSelf: 'stretch', paddingHorizontal: 18 },
-  titleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 4 },
-  eyebrow: { ...type.footnote, color: colors.leafDark, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.3 },
-  editLink: { ...type.subhead, color: colors.leafDark, fontWeight: '600' },
-  name: { ...type.title1, color: colors.ink, marginTop: 4 },
-  meta: { ...type.subhead, color: colors.muted, marginTop: 6, lineHeight: 20 },
-  planBanner: {
-    marginTop: 18,
-    padding: 14,
-    backgroundColor: colors.saffronBg,
-  },
+  titleBlock: { paddingHorizontal: 4, gap: 4 },
+  titleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  eyebrow: { ...type.footnote, color: colors.muted, fontWeight: '600', letterSpacing: 0.2 },
+  editLink: { ...type.subhead, color: colors.leaf },
+  name: { ...type.title1, color: colors.ink },
+  meta: { ...type.subhead, color: colors.muted },
+  planBanner: { marginTop: 18, paddingVertical: 14, paddingHorizontal: 16, backgroundColor: colors.saffronBg },
   planTitle: { ...type.headline, color: colors.saffron },
-  planBody: { ...type.footnote, color: colors.saffron, marginTop: 4, lineHeight: 19 },
-  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 8 },
+  planBody: { ...type.footnote, color: colors.ink, marginTop: 4, lineHeight: 18 },
+  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   errorText: { ...type.footnote, color: colors.rose, marginTop: 6, marginLeft: 16 },
-  preview: {
-    marginTop: 24,
-    padding: 20,
-    alignItems: 'center',
-  },
-  previewLabel: { ...type.caption, color: colors.muted, fontWeight: '600', letterSpacing: 0.4 },
-  previewKcal: { color: colors.ink, fontSize: 36, fontWeight: '700', marginTop: 6 },
-  previewMacros: { ...type.subhead, color: colors.muted, marginTop: 4, textAlign: 'center', lineHeight: 20 },
+  preview: { marginTop: 24, paddingTop: 14, paddingHorizontal: 16, paddingBottom: 16 },
+  previewRow: { flexDirection: 'row', alignItems: 'baseline', gap: 5, marginTop: 6 },
+  previewKcal: { ...heroNumber(40), lineHeight: 46 },
+  previewHairline: { marginTop: 14, marginBottom: 12 },
+  macroCols: { flexDirection: 'row' },
+  macroSep: { width: 1, backgroundColor: colors.separator },
+  macroCol: { flex: 1, paddingHorizontal: 10, gap: 2 },
+  macroColFirst: { paddingLeft: 0 },
+  macroLabel: { ...type.footnote, fontWeight: '600' },
+  macroVal: { fontSize: 20, fontWeight: '600', color: colors.ink },
+  macroUnit: { ...type.footnote, color: colors.muted, fontWeight: '400' },
   previewHint: { ...type.subhead, color: colors.muted },
   save: { marginTop: 24 },
 });

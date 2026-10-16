@@ -1,3 +1,4 @@
+import dayjs from 'dayjs';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Linking, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
@@ -11,8 +12,18 @@ import {
 import { lookupNutrition, type NutritionLookup } from '@/db/nutritionLookup';
 import { confirmDestructive } from '@/lib/confirm';
 import type { MealType } from '@/types/db';
-import { Card, GroupFooter, GroupHeader, PrimaryButton, Row, TintButton } from '@/ui/components';
+import {
+  Card,
+  DestructiveButton,
+  formScrollProps,
+  GroupFooter,
+  GroupHeader,
+  PrimaryButton,
+  Row,
+  TintButton,
+} from '@/ui/components';
 import { colors, radius, type } from '@/ui/theme';
+import { showToast } from '@/ui/toast';
 
 /**
  * Custom food screen. Two modes:
@@ -24,7 +35,12 @@ import { colors, radius, type } from '@/ui/theme';
  */
 export default function CustomFoodScreen() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ meal?: MealType; date?: string; code?: string }>();
+  const params = useLocalSearchParams<{
+    meal?: MealType;
+    date?: string;
+    code?: string;
+    origin?: string;
+  }>();
   const editCode = params.code ?? null;
   const isEdit = editCode !== null;
 
@@ -105,13 +121,20 @@ export default function CustomFoodScreen() {
       };
       if (isEdit) {
         await updateCustomFood(editCode, fields);
+        showToast('Custom food updated');
         router.back();
       } else {
         const code = await insertCustomFood(fields);
         // Straight into logging the food we just created.
         router.replace({
           pathname: '/log-entry',
-          params: { code, table: 'custom', meal: params.meal ?? 'breakfast', date: params.date ?? today() },
+          params: {
+            code,
+            table: 'custom',
+            meal: params.meal ?? 'breakfast',
+            date: params.date ?? today(),
+            ...(params.origin ? { origin: params.origin } : {}),
+          },
         });
       }
     } finally {
@@ -127,36 +150,41 @@ export default function CustomFoodScreen() {
       'Delete',
       async () => {
         await deleteCustomFood(editCode);
+        showToast('Custom food deleted');
         router.back();
       }
     );
   }
 
   return (
-    <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
-      <GroupHeader>Food</GroupHeader>
+    <ScrollView style={styles.screen} contentContainerStyle={styles.content} {...formScrollProps}>
+      <GroupHeader style={styles.firstHeader}>Food</GroupHeader>
       <Card>
         <InputRow first label="Name" value={name} onChangeText={setName} placeholder="e.g. Mom’s rajma" />
-        <InputRow label="Calories" value={kcal} onChangeText={setKcal} placeholder="0" suffix="Cal" numeric />
+        <InputRow label="Calories / 100 g" value={kcal} onChangeText={setKcal} placeholder="0" suffix="kcal" numeric />
       </Card>
-      <GroupFooter>Name and calories are required. Everything below is per 100 g.</GroupFooter>
+      <GroupFooter>
+        Name and calories are required. Every value on this screen is per 100 g of the food,
+        not per serving.
+      </GroupFooter>
 
-      <GroupHeader>Describe it (optional — helps the AI lookup)</GroupHeader>
-      <Card>
-        <TextInput
-          style={styles.descInput}
-          value={description}
-          onChangeText={setDescription}
-          placeholder="e.g. homemade rajma, thick onion-tomato gravy, ~1 tbsp oil per serving"
-          placeholderTextColor={colors.faint}
-          multiline
-        />
-      </Card>
+      <GroupHeader>Describe it (optional)</GroupHeader>
+      <TextInput
+        style={styles.descInput}
+        value={description}
+        onChangeText={setDescription}
+        placeholder="e.g. homemade rajma, thick gravy, ~1 tbsp oil per serving"
+        placeholderTextColor={colors.placeholder}
+        selectionColor={colors.leaf}
+        numberOfLines={1}
+      />
 
       <TintButton
-        title={looking ? 'Searching credible sources…' : '✨  Look up nutrition'}
+        title={looking ? 'Searching credible sources…' : 'Look Up Nutrition'}
         onPress={onLookup}
-        style={[styles.lookup, !canLookup && styles.lookupOff]}
+        disabled={!canLookup}
+        hint={!looking && name.trim().length < 2 ? 'Enter a food name to look up its nutrition.' : null}
+        style={styles.lookup}
       />
       {lookupError ? <Text style={styles.lookupError}>{lookupError}</Text> : null}
       {lookup ? (
@@ -180,18 +208,18 @@ export default function CustomFoodScreen() {
           <Text style={styles.lookupCaution}>AI estimate — review the numbers and sources before saving.</Text>
           {!lookup.sane ? (
             <Text style={styles.lookupWarn}>
-              ⚠︎ Calories look inconsistent with the macros — please double-check.
+              Calories look inconsistent with the macros — please double-check.
             </Text>
           ) : null}
         </View>
       ) : null}
 
-      <GroupHeader>Macros (optional)</GroupHeader>
+      <GroupHeader>Macros per 100 g (optional)</GroupHeader>
       <Card>
-        <InputRow first label="Protein" value={protein} onChangeText={setProtein} placeholder="0" suffix="g" numeric />
-        <InputRow label="Carbs" value={carb} onChangeText={setCarb} placeholder="0" suffix="g" numeric />
-        <InputRow label="Fat" value={fat} onChangeText={setFat} placeholder="0" suffix="g" numeric />
-        <InputRow label="Fibre" value={fibre} onChangeText={setFibre} placeholder="0" suffix="g" numeric />
+        <InputRow first label="Protein" labelColor={colors.protein} value={protein} onChangeText={setProtein} placeholder="0" suffix="g" numeric />
+        <InputRow label="Carbs" labelColor={colors.carbs} value={carb} onChangeText={setCarb} placeholder="0" suffix="g" numeric />
+        <InputRow label="Fat" labelColor={colors.fat} value={fat} onChangeText={setFat} placeholder="0" suffix="g" numeric />
+        <InputRow label="Fibre" labelColor={colors.fibre} value={fibre} onChangeText={setFibre} placeholder="0" suffix="g" numeric />
       </Card>
 
       <GroupHeader>Default measure (optional)</GroupHeader>
@@ -201,15 +229,14 @@ export default function CustomFoodScreen() {
       </Card>
 
       <PrimaryButton
-        title={saving ? 'Saving…' : isEdit ? 'Save changes' : 'Save & log'}
+        title={saving ? 'Saving…' : isEdit ? 'Save Changes' : 'Save & Log'}
         onPress={onSave}
         disabled={!canSave || saving}
+        hint={!canSave ? 'Add a name and calories to save.' : null}
         style={styles.save}
       />
       {isEdit ? (
-        <Pressable style={styles.delete} onPress={onDelete}>
-          <Text style={styles.deleteText}>Delete custom food</Text>
-        </Pressable>
+        <DestructiveButton title="Delete Custom Food" onPress={onDelete} style={styles.delete} />
       ) : null}
     </ScrollView>
   );
@@ -217,6 +244,7 @@ export default function CustomFoodScreen() {
 
 function InputRow({
   label,
+  labelColor,
   value,
   onChangeText,
   placeholder,
@@ -226,6 +254,7 @@ function InputRow({
   autoCapitalize,
 }: {
   label: string;
+  labelColor?: string;
   value: string;
   onChangeText: (t: string) => void;
   placeholder?: string;
@@ -236,14 +265,15 @@ function InputRow({
 }) {
   return (
     <Row first={first}>
-      <Text style={styles.label}>{label}</Text>
+      <Text style={[styles.label, labelColor ? { color: labelColor } : null]}>{label}</Text>
       <View style={styles.valueWrap}>
         <TextInput
           style={styles.input}
           value={value}
           onChangeText={onChangeText}
           placeholder={placeholder}
-          placeholderTextColor={colors.faint}
+          placeholderTextColor={colors.placeholder}
+          selectionColor={colors.leaf}
           keyboardType={numeric ? 'numeric' : 'default'}
           inputMode={numeric ? 'decimal' : 'text'}
           autoCapitalize={autoCapitalize}
@@ -261,42 +291,45 @@ function num(s: string): number | null {
 function numStr(n: number | null): string {
   return n != null ? String(n) : '';
 }
+/** Local calendar date (toISOString is UTC, which is still "yesterday" before 5:30 am IST). */
 function today(): string {
-  return new Date().toISOString().slice(0, 10);
+  return dayjs().format('YYYY-MM-DD');
 }
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.bg },
-  content: { padding: 16, paddingBottom: 48 },
+  content: { paddingHorizontal: 16, paddingBottom: 40 },
+  firstHeader: { marginTop: 12 },
   label: { ...type.body, color: colors.ink, marginRight: 12 },
   valueWrap: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 6 },
   input: { ...type.body, color: colors.ink, flex: 1, textAlign: 'right', paddingVertical: 0 },
   suffix: { ...type.body, color: colors.muted },
   save: { marginTop: 24 },
-  delete: { marginTop: 8, paddingVertical: 14, alignItems: 'center' },
-  deleteText: { ...type.body, color: colors.rose, fontWeight: '500' },
+  delete: { marginTop: 8 },
+  descInput: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    fontSize: 16, // 16+ stops iOS Safari zooming the page when the field is focused
+    lineHeight: 20,
+    color: colors.ink,
+  },
   lookup: { marginTop: 12 },
-  lookupOff: { opacity: 0.5 },
   lookupError: { ...type.footnote, color: colors.rose, marginTop: 8, marginHorizontal: 16 },
   lookupInfo: {
     marginTop: 12,
-    padding: 14,
-    borderRadius: radius.md,
-    backgroundColor: colors.mint,
-  },
-  lookupSource: { ...type.subhead, color: colors.leafDark, fontWeight: '600' },
-  lookupNote: { ...type.footnote, color: colors.muted, marginTop: 3 },
-  descInput: {
-    ...type.body,
-    color: colors.ink,
+    paddingVertical: 14,
     paddingHorizontal: 16,
-    paddingVertical: 12,
-    minHeight: 64,
-    textAlignVertical: 'top',
+    borderRadius: radius.lg,
+    backgroundColor: colors.surface,
+    gap: 6,
   },
-  sources: { marginTop: 10, gap: 4 },
+  lookupSource: { ...type.subhead, color: colors.leaf, fontWeight: '600' },
+  lookupNote: { ...type.footnote, color: colors.muted, lineHeight: 18 },
+  sources: { marginTop: 4, gap: 6 },
   sourcesLabel: { ...type.caption, color: colors.muted, fontWeight: '600', letterSpacing: 0.4 },
-  sourceLink: { ...type.footnote, color: colors.leafDark, fontWeight: '500' },
-  lookupCaution: { ...type.footnote, color: colors.muted, marginTop: 6 },
-  lookupWarn: { ...type.footnote, color: colors.saffron, marginTop: 6, fontWeight: '600' },
+  sourceLink: { ...type.footnote, color: colors.leaf },
+  lookupCaution: { ...type.footnote, color: colors.muted, marginTop: 2 },
+  lookupWarn: { ...type.footnote, color: colors.energy },
 });

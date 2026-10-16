@@ -4,10 +4,15 @@
     "slug": "nutrition-tracker",
     "version": "1.0.0",
     "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
     "scheme": "nutritiontracker",
-    "userInterfaceStyle": "automatic",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#000000",
     "newArchEnabled": true,
-    "assetBundlePatterns": ["assets/db/*", "**/*"],
+    "assetBundlePatterns": [
+      "assets/db/*",
+      "**/*"
+    ],
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.nutritiontracker.app"
@@ -17,9 +22,13 @@
     },
     "web": {
       "bundler": "metro",
-      "output": "single"
+      "output": "single",
+      "favicon": "./assets/images/icon.png"
     },
-    "plugins": ["expo-router", "expo-sqlite"],
+    "plugins": [
+      "expo-router",
+      "expo-sqlite"
+    ],
     "experiments": {
       "typedRoutes": true
     }

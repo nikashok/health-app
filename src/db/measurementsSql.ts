@@ -25,3 +25,6 @@ export const ALL_MEASUREMENTS_ASC = `
   SELECT * FROM body_measurements
    WHERE weight_kg IS NOT NULL OR waist_cm IS NOT NULL
    ORDER BY measured_on ASC`;
+
+/** Remove a day's measurement entirely (the backup drain then deletes it remotely). */
+export const DELETE_MEASUREMENT = `DELETE FROM body_measurements WHERE measured_on = ?`;

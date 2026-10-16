@@ -21,3 +21,22 @@ export function confirmDestructive(
     { text: confirmLabel, style: 'destructive', onPress: onConfirm },
   ]);
 }
+
+/** Cross-platform "are you sure?" for a non-destructive action (e.g. an unusual value). */
+export function confirmProceed(
+  title: string,
+  message: string,
+  confirmLabel: string,
+  onConfirm: () => void
+): void {
+  if (Platform.OS === 'web') {
+    if (typeof window !== 'undefined' && window.confirm(`${title}\n\n${message}`)) {
+      onConfirm();
+    }
+    return;
+  }
+  Alert.alert(title, message, [
+    { text: 'Cancel', style: 'cancel' },
+    { text: confirmLabel, onPress: onConfirm },
+  ]);
+}

@@ -85,9 +85,10 @@ rewrites everything except `/api/*` to `/index.html` (SPA) — zero-config deplo
 ## 3. Design system
 
 `src/ui/theme.ts` + `src/ui/components.tsx` hold the shared tokens/components. Current
-look is "Vital Dark" (dark palette, amber `#ffb454` accent, orange gradient protein bar,
-FAB darkened ~25% to `#b06228`). If asked to touch visuals, check `theme.ts` first
-rather than hardcoding colors in screens.
+look is "True Black Vivid" (iOS-style: `#000` background, solid `#1c1c1e` cards with no
+borders, blue `#0a84ff` for every action, orange `#ff6a1a` for calories, fixed macro
+colours `colors.protein/carbs/fat/fibre`, green `#30d158` for body metrics). If asked to
+touch visuals, check `theme.ts` first rather than hardcoding colors in screens.
 
 ## 4. Where this diverges from the original CLAUDE.md spec
 

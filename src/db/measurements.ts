@@ -8,6 +8,7 @@ import type { BodyMeasurement } from '@/types/db';
 import { getDatabase } from './database';
 import {
   ALL_MEASUREMENTS_ASC,
+  DELETE_MEASUREMENT,
   GET_MEASUREMENT,
   RECENT_MEASUREMENTS,
   UPSERT_MEASUREMENT,
@@ -38,6 +39,19 @@ export async function saveMeasurement(date: string, m: MeasurementInput): Promis
       now, // created_at (ignored by ON CONFLICT update)
       now // updated_at
     );
+    await enqueue(db, 'body_measurements', date);
+  });
+  scheduleDrain();
+}
+
+/**
+ * Delete a day's reading and queue it for backup. The drain finds the local row gone
+ * and deletes it remotely by date.
+ */
+export async function deleteMeasurement(date: string): Promise<void> {
+  const db = getDatabase();
+  await db.withTransactionAsync(async () => {
+    await db.runAsync(DELETE_MEASUREMENT, date);
     await enqueue(db, 'body_measurements', date);
   });
   scheduleDrain();

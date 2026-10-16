@@ -1,13 +1,16 @@
 import type { Session } from '@supabase/supabase-js';
 import { Stack } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, AppState, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, AppState, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 
 import { initDatabase } from '@/db/database';
 import { supabase } from '@/db/supabase';
 import { bootstrapSync, drainOutbox } from '@/db/sync';
 import { AuthScreen } from '@/ui/AuthScreen';
+import { HomeButton } from '@/ui/HomeButton';
+import { SyncStatus } from '@/ui/SyncStatus';
 import { colors, type } from '@/ui/theme';
+import { Toast } from '@/ui/toast';
 
 /**
  * Root layout. Gates before the app renders:
@@ -92,26 +95,53 @@ export default function RootLayout() {
   }
 
   return (
-    <Stack
-      screenOptions={{
-        headerStyle: { backgroundColor: colors.bg },
-        headerShadowVisible: false,
-        headerTintColor: colors.leafDark,
-        headerTitleStyle: { color: colors.ink, fontWeight: '600', fontSize: 17 },
-        headerBackButtonDisplayMode: 'minimal',
-        contentStyle: { backgroundColor: colors.bg },
-        headerBlurEffect: 'dark',
-      }}
-    >
-      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-      <Stack.Screen name="onboarding" options={{ title: 'Targets', headerLargeTitle: true }} />
-      <Stack.Screen name="diary" options={{ title: 'Diary', headerLargeTitle: true }} />
-      <Stack.Screen name="log" options={{ title: 'Add Food' }} />
-      <Stack.Screen name="log-entry" options={{ title: 'Add Food' }} />
-      <Stack.Screen name="edit-entry" options={{ title: 'Edit Entry' }} />
-      <Stack.Screen name="custom-food" options={{ title: 'Custom Food' }} />
-      <Stack.Screen name="measurement" options={{ title: 'Weight & Waist' }} />
-    </Stack>
+    <>
+      <Stack
+        screenOptions={{
+          headerStyle: { backgroundColor: colors.bg },
+          headerLargeStyle: { backgroundColor: colors.bg },
+          headerShadowVisible: false,
+          headerTintColor: colors.leaf,
+          headerTitleStyle: { color: colors.ink, fontWeight: '600', fontSize: 17 },
+          headerTitleAlign: 'center',
+          headerLargeTitleStyle: { color: colors.ink },
+          headerBackButtonDisplayMode: 'default',
+          contentStyle: { backgroundColor: colors.bg },
+          headerBlurEffect: 'dark',
+          // The app logo, top right: one tap back to Home from anywhere.
+          headerRight: () => <HomeButton />,
+        }}
+      >
+        {/* Home draws its own large title; its title is the back label ("‹ Today") elsewhere. */}
+        <Stack.Screen name="(tabs)" options={{ headerShown: false, title: 'Today' }} />
+        <Stack.Screen name="onboarding" options={{ title: 'Targets', headerLargeTitle: true }} />
+        <Stack.Screen
+          name="diary"
+          options={{
+            title: 'Diary',
+            headerLargeTitle: true,
+            headerRight: () => <DiaryHeaderRight />,
+          }}
+        />
+        <Stack.Screen name="log" options={{ title: 'Add Food' }} />
+        <Stack.Screen name="log-entry" options={{ title: '' }} />
+        <Stack.Screen name="edit-entry" options={{ title: 'Edit Entry' }} />
+        <Stack.Screen name="custom-food" options={{ title: 'Custom Food' }} />
+        <Stack.Screen name="measurement" options={{ title: 'Weight & Waist' }} />
+      </Stack>
+      <Toast />
+    </>
+  );
+}
+
+/** Diary's nav items. On narrow phones the backup pill shrinks to its dot so it can't cover the title. */
+function DiaryHeaderRight() {
+  const { width } = useWindowDimensions();
+  return (
+    <View style={styles.headerRight}>
+      <SyncStatus compact={width < 375} />
+      <HomeButton />
+    </View>
   );
 }
 
@@ -126,4 +156,5 @@ const styles = StyleSheet.create({
   loading: { ...type.subhead, marginTop: 12, color: colors.muted },
   errorTitle: { ...type.headline, color: colors.ink, marginBottom: 8 },
   errorBody: { ...type.subhead, color: colors.rose, textAlign: 'center' },
+  headerRight: { flexDirection: 'row', alignItems: 'center', gap: 12 },
 });

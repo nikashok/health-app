@@ -1,75 +1,93 @@
 import dayjs from 'dayjs';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { useCallback, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, Text, View } from 'react-native';
+import { useCallback, useEffect, useState } from 'react';
+import { ActivityIndicator, RefreshControl, ScrollView, Text, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { consumedTotals } from '@/calc/dayTotals';
 import { addDays, buildRangeInsights } from '@/calc/insights';
 import { getDailyKcal } from '@/db/insights';
 import { getEntriesForDate } from '@/db/logEntries';
-import { getAllMeasurements, getRecentMeasurements } from '@/db/measurements';
+import { getAllMeasurements } from '@/db/measurements';
 import { getProfile } from '@/db/profile';
 import { supabase } from '@/db/supabase';
-import { useSyncStatus } from '@/db/sync';
-import { dark as D } from '@/ui/theme';
+import { reconcile, useSyncStatus } from '@/db/sync';
+import { confirmDestructive } from '@/lib/confirm';
+import { BottomAction } from '@/ui/components';
 import { BodyTrends } from '@/ui/home/BodyTrends';
-import { CalorieRing } from '@/ui/home/CalorieRing';
-import { HomeFab } from '@/ui/home/HomeFab';
+import { CaloriesCard } from '@/ui/home/CaloriesCard';
 import { HomeHeader } from '@/ui/home/HomeHeader';
-import { computeStreak, type HomeState } from '@/ui/home/homeUtils';
+import { computeStreak, inferMeal, type HomeState } from '@/ui/home/homeUtils';
 import { MonthCard, WeekCard } from '@/ui/home/IntakeBars';
-import { MacrosCard } from '@/ui/home/MacrosCard';
-import { QuickAddChips } from '@/ui/home/QuickAddChips';
-import { QuickAddSheet } from '@/ui/home/QuickAddSheet';
+import { QuickActions } from '@/ui/home/QuickActions';
 import { styles } from '@/ui/home/styles';
 import { TodayMeals } from '@/ui/home/TodayMeals';
+import { colors } from '@/ui/theme';
+
+/** Load everything Home shows. Returns null when there is no profile yet (first run). */
+async function loadHome(): Promise<HomeState | null> {
+  const profile = await getProfile();
+  if (profile === null) return null;
+  const todayISO = dayjs().format('YYYY-MM-DD');
+  const target = profile.target_kcal ?? null;
+  const [todayEntries, monthMap, allMeasurements] = await Promise.all([
+    getEntriesForDate(todayISO),
+    getDailyKcal(addDays(todayISO, -29), todayISO),
+    getAllMeasurements(),
+  ]);
+  return {
+    profile,
+    today: todayEntries,
+    week: buildRangeInsights(monthMap, todayISO, 7, target),
+    monthMap,
+    allMeasurements,
+  };
+}
 
 export default function HomeScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const [state, setState] = useState<HomeState | null>(null);
-  const [sheetOpen, setSheetOpen] = useState(false);
-  const { pending, lastSyncedAt } = useSyncStatus();
+  const [initial, setInitial] = useState('');
+  const [refreshing, setRefreshing] = useState(false);
+  const { pending, syncing } = useSyncStatus();
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      setInitial((data.session?.user?.email ?? '').charAt(0).toUpperCase());
+    });
+  }, []);
 
   useFocusEffect(
     useCallback(() => {
       let active = true;
-      (async () => {
-        const profile = await getProfile();
-        if (profile === null) {
-          router.replace('/onboarding');
-          return;
-        }
-        const todayISO = dayjs().format('YYYY-MM-DD');
-        const target = profile.target_kcal ?? null;
-        const [todayEntries, monthMap, recentMeasurements, allMeasurements] = await Promise.all([
-          getEntriesForDate(todayISO),
-          getDailyKcal(addDays(todayISO, -29), todayISO),
-          getRecentMeasurements(7),
-          getAllMeasurements(),
-        ]);
+      loadHome().then((s) => {
         if (!active) return;
-        setState({
-          profile,
-          today: todayEntries,
-          week: buildRangeInsights(monthMap, todayISO, 7, target),
-          monthMap,
-          recentMeasurements,
-          allMeasurements,
-        });
-      })();
+        if (s === null) router.replace('/onboarding');
+        else setState(s);
+      });
       return () => {
         active = false;
       };
     }, [router])
   );
 
+  // Pull to refresh: back up anything pending, then reload the day.
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await reconcile().catch(() => {});
+      const s = await loadHome();
+      if (s) setState(s);
+    } finally {
+      setRefreshing(false);
+    }
+  }, []);
+
   if (!state) {
     return (
-      <View style={[styles.center, { backgroundColor: D.bg }]}>
-        <ActivityIndicator size="large" color={D.accent} />
+      <View style={[styles.root, styles.center]}>
+        <ActivityIndicator size="large" color={colors.leaf} />
         <Text style={styles.loading}>Loading your day</Text>
       </View>
     );
@@ -81,54 +99,57 @@ export default function HomeScreen() {
   const consumed = consumedTotals(today);
   const streak = computeStreak(monthMap, todayISO);
   const month = buildRangeInsights(monthMap, todayISO, 30, target);
+  const syncLabel = syncing ? 'Backing up…' : pending > 0 ? `${pending} to back up` : 'Backed up';
+
+  const logFood = () =>
+    router.push({ pathname: '/log', params: { meal: inferMeal(), date: todayISO, origin: 'home' } });
+  const logWeight = () => router.push('/measurement');
+  const editTargets = () => router.push('/onboarding');
+  const openDay = (date: string) => router.push({ pathname: '/diary', params: { date } });
+  const signOut = () =>
+    confirmDestructive(
+      'Sign out?',
+      'You will need your email and password to sign back in.',
+      'Sign Out',
+      () => supabase.auth.signOut()
+    );
 
   return (
     <View style={styles.root}>
-      {/* radial glow from top */}
-      <LinearGradient
-        colors={[D.glow, 'transparent']}
-        style={styles.topGlow}
-        start={{ x: 0.5, y: 0 }}
-        end={{ x: 0.5, y: 1 }}
-        pointerEvents="none"
-      />
-
       <SafeAreaView style={styles.flex} edges={['top']}>
         <ScrollView
-          contentContainerStyle={[styles.content, { paddingBottom: 100 + insets.bottom }]}
+          contentContainerStyle={[styles.content, { paddingBottom: 130 + insets.bottom }]}
           showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.muted} />
+          }
         >
-          <HomeHeader streak={streak} pending={pending} lastSyncedAt={lastSyncedAt} />
-          <CalorieRing consumed={consumed} target={target} />
-          <MacrosCard consumed={consumed} profile={profile} />
-          <QuickAddChips today={today} todayISO={todayISO} router={router} />
-          <BodyTrends allMeasurements={allMeasurements} todayISO={todayISO} />
-          <WeekCard week={week} target={target} />
-          <MonthCard month={month} target={target} />
-          <TodayMeals today={today} todayISO={todayISO} router={router} />
+          <HomeHeader
+            initial={initial || '•'}
+            streak={streak}
+            syncLabel={syncLabel}
+            onSyncPress={onRefresh}
+            hasTarget={target != null}
+            topInset={insets.top}
+            onEditTargets={editTargets}
+            onSignOut={signOut}
+          />
+          <CaloriesCard consumed={consumed} profile={profile} onGoalPress={editTargets} />
+          <BodyTrends allMeasurements={allMeasurements} todayISO={todayISO} onPress={logWeight} />
+          <QuickActions onLogWeight={logWeight} />
 
-          {/* ── Footer ── */}
-          <View style={styles.footer}>
-            <Pressable onPress={() => router.push('/onboarding')}>
-              <Text style={styles.footerLink}>{target ? 'Edit targets' : 'Set targets'}</Text>
-            </Pressable>
-            <Pressable onPress={() => supabase.auth.signOut()}>
-              <Text style={styles.footerMuted}>Sign out</Text>
-            </Pressable>
+          {/* TODO: add "Show All" here once an insights screen exists (app/insights.tsx). */}
+          <View style={styles.sectionHead}>
+            <Text style={styles.sectionTitle}>Trends</Text>
           </View>
+          <WeekCard week={week} target={target} onDayPress={openDay} />
+          <MonthCard month={month} target={target} onDayPress={openDay} />
+
+          <TodayMeals today={today} todayISO={todayISO} router={router} />
         </ScrollView>
       </SafeAreaView>
 
-      <HomeFab bottom={28 + insets.bottom} onPress={() => setSheetOpen(true)} />
-
-      <QuickAddSheet
-        visible={sheetOpen}
-        onClose={() => setSheetOpen(false)}
-        allMeasurements={allMeasurements}
-        todayISO={todayISO}
-        router={router}
-        insetsBottom={insets.bottom}
-      />
+      <BottomAction title="Log Food" onPress={logFood} insetBottom={insets.bottom} />
     </View>
   );
 }

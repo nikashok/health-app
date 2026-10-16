@@ -8,9 +8,16 @@ import { useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 
 import { reconcile, useSyncStatus } from '@/db/sync';
-import { colors, radius, type } from '@/ui/theme';
+import { colors, type } from '@/ui/theme';
 
-export function SyncStatus({ style }: { style?: StyleProp<ViewStyle> }) {
+/** `compact` shows just the status dot (narrow screens); the label stays for screen readers. */
+export function SyncStatus({
+  style,
+  compact,
+}: {
+  style?: StyleProp<ViewStyle>;
+  compact?: boolean;
+}) {
   const { pending, syncing, lastError } = useSyncStatus();
   const [busy, setBusy] = useState(false);
   const active = syncing || busy;
@@ -33,10 +40,10 @@ export function SyncStatus({ style }: { style?: StyleProp<ViewStyle> }) {
     label = 'Backing up…';
   } else if (pending > 0) {
     label = lastError ? `Offline · ${pending} to back up` : `${pending} to back up`;
-    tone = colors.saffron;
+    tone = colors.energy;
   } else {
     label = 'Backed up';
-    tone = colors.leafDark;
+    tone = colors.good;
   }
 
   return (
@@ -46,14 +53,14 @@ export function SyncStatus({ style }: { style?: StyleProp<ViewStyle> }) {
       hitSlop={6}
       style={[styles.wrap, style]}
       accessibilityRole="button"
-      accessibilityLabel={pending > 0 ? 'Back up now' : 'Backed up'}
+      accessibilityLabel={pending > 0 ? `${label}. Back up now` : label}
     >
       {active ? (
         <ActivityIndicator size="small" color={tone} />
       ) : (
         <View style={[styles.dot, { backgroundColor: tone }]} />
       )}
-      <Text style={[styles.text, { color: tone }]}>{label}</Text>
+      {compact ? null : <Text style={[styles.text, { color: tone }]}>{label}</Text>}
     </Pressable>
   );
 }
@@ -63,10 +70,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    paddingVertical: 4,
+    height: 26,
     paddingHorizontal: 10,
-    borderRadius: radius.pill,
-    backgroundColor: colors.fillStrong,
+    borderRadius: 13,
+    backgroundColor: colors.surface,
     alignSelf: 'flex-start',
   },
   dot: { width: 7, height: 7, borderRadius: 4 },

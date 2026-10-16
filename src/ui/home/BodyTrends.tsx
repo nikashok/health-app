@@ -1,119 +1,103 @@
-import dayjs from 'dayjs';
-import { Text, View } from 'react-native';
-import {
-  Defs,
-  LinearGradient as SvgLinearGradient,
-  Path,
-  Polyline,
-  Stop,
-  Svg,
-} from 'react-native-svg';
+import { useState } from 'react';
+import { Pressable, Text, View } from 'react-native';
+import { Polyline, Svg } from 'react-native-svg';
 
 import type { BodyMeasurement } from '@/types/db';
-import { dark as D } from '@/ui/theme';
+import { Chevron } from '@/ui/components';
+import { colors } from '@/ui/theme';
 
-import { buildAreaPath, buildSparkPoints, carryForward, latestMeasured } from './homeUtils';
+import { buildSparkPoints, carryForward, changeLine, latestMeasured } from './homeUtils';
 import { styles } from './styles';
 
+const SPARK_H = 40;
+
 /**
- * Weight + waist lifetime sparkline cards. Values carry forward: on a day with no
- * reading the card keeps showing the last one recorded, stamped with its date.
+ * Weight + waist cards: latest reading (carried forward from the last day it was
+ * recorded), the change over 30 days, and a lifetime sparkline.
  */
 export function BodyTrends({
   allMeasurements,
   todayISO,
+  onPress,
 }: {
   allMeasurements: BodyMeasurement[];
   todayISO: string;
+  onPress: () => void;
 }) {
   const weight = latestMeasured(allMeasurements, 'weight_kg');
   const waist = latestMeasured(allMeasurements, 'waist_cm');
   return (
-    <View style={styles.section}>
-      <Text style={styles.sectionLabel}>Trends</Text>
-      <View style={styles.trendsGrid}>
-        <MiniTrendCard
-          label="Weight"
-          value={weight?.value ?? null}
-          asOf={asOfLabel(weight?.date, todayISO)}
-          unit="kg"
-          data={carryForward(allMeasurements.map((m) => m.weight_kg))}
-          strokeColor={D.amber}
-          gradId="wA"
-          gradColor={D.amber}
-        />
-        <MiniTrendCard
-          label="Waist"
-          value={waist?.value ?? null}
-          asOf={asOfLabel(waist?.date, todayISO)}
-          unit="cm"
-          data={carryForward(allMeasurements.map((m) => m.waist_cm))}
-          strokeColor={D.cyan}
-          gradId="wB"
-          gradColor={D.cyan}
-        />
-      </View>
+    <View style={styles.bodyGrid}>
+      <BodyCard
+        label="Weight"
+        value={weight?.value ?? null}
+        unit="kg"
+        change={changeLine(allMeasurements, 'weight_kg', 'kg', todayISO)}
+        data={carryForward(allMeasurements.map((m) => m.weight_kg))}
+        onPress={onPress}
+      />
+      <BodyCard
+        label="Waist"
+        value={waist?.value ?? null}
+        unit="cm"
+        change={changeLine(allMeasurements, 'waist_cm', 'cm', todayISO)}
+        data={carryForward(allMeasurements.map((m) => m.waist_cm))}
+        onPress={onPress}
+      />
     </View>
   );
 }
 
-/** "as of 12 Jul" when the shown value is carried over from an earlier day. */
-function asOfLabel(date: string | undefined, todayISO: string): string | null {
-  if (!date || date === todayISO) return null;
-  return `as of ${dayjs(date).format('D MMM')}`;
-}
-
-function MiniTrendCard({
+function BodyCard({
   label,
   value,
-  asOf,
   unit,
+  change,
   data,
-  strokeColor,
-  gradId,
-  gradColor,
+  onPress,
 }: {
   label: string;
   value: number | null;
-  asOf: string | null;
   unit: string;
+  change: string;
   data: number[];
-  strokeColor: string;
-  gradId: string;
-  gradColor: string;
+  onPress: () => void;
 }) {
-  const sparkPts = buildSparkPoints(data, 120, 38);
-  const areaPath = sparkPts ? buildAreaPath(sparkPts, 38) : '';
+  const [width, setWidth] = useState(0);
+  const pts = width > 0 ? buildSparkPoints(data, width, SPARK_H) : '';
 
   return (
-    <View style={styles.trendCard}>
-      <Text style={styles.trendLabel}>{label}</Text>
-      <View style={styles.trendValRow}>
-        <Text style={styles.trendVal}>{value ?? '—'}</Text>
-        <Text style={styles.trendUnit}>{unit}</Text>
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [styles.card, styles.bodyCard, pressed && styles.cardPressed]}
+    >
+      <View style={styles.bodyHead}>
+        <Text style={styles.bodyLabel}>{label}</Text>
+        <Chevron />
       </View>
-      {asOf ? <Text style={styles.trendAsOf}>{asOf}</Text> : null}
-      <Svg width="100%" height={38} viewBox="0 0 120 38" preserveAspectRatio="none">
-        <Defs>
-          <SvgLinearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
-            <Stop offset="0" stopColor={gradColor} stopOpacity={0.34} />
-            <Stop offset="1" stopColor={gradColor} stopOpacity={0} />
-          </SvgLinearGradient>
-        </Defs>
-        {sparkPts ? (
-          <>
-            <Path d={areaPath} fill={`url(#${gradId})`} />
+      <View style={styles.bodyValRow}>
+        <Text style={styles.bodyVal} maxFontSizeMultiplier={1.3}>
+          {value ?? '—'}
+        </Text>
+        <Text style={styles.bodyUnit}>{unit}</Text>
+      </View>
+      <Text style={styles.bodyChange} numberOfLines={1}>
+        {change}
+      </Text>
+      <View style={styles.spark} onLayout={(e) => setWidth(e.nativeEvent.layout.width)}>
+        {pts ? (
+          <Svg width={width} height={SPARK_H}>
             <Polyline
-              points={sparkPts}
+              points={pts}
               fill="none"
-              stroke={strokeColor}
-              strokeWidth={2.4}
+              stroke={colors.good}
+              strokeWidth={2.2}
               strokeLinecap="round"
               strokeLinejoin="round"
             />
-          </>
+          </Svg>
         ) : null}
-      </Svg>
-    </View>
+      </View>
+    </Pressable>
   );
 }

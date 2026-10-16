@@ -1,26 +1,22 @@
 // Shared constants, types, and pure helpers for the Home screen.
-// Extracted verbatim from app/(tabs)/index.tsx (I0 Home split) — no behavior change.
 import dayjs from 'dayjs';
 import type { useRouter } from 'expo-router';
 
 import { addDays, type RangeInsights } from '@/calc/insights';
 import type { BodyMeasurement, LogEntry, MealType, UserProfile } from '@/types/db';
-import { dark as D } from '@/ui/theme';
 
 /** The expo-router navigator, passed to Home sub-components that navigate. */
 export type HomeRouter = ReturnType<typeof useRouter>;
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
-export const RING_R = 104;
-export const RING_C = 2 * Math.PI * RING_R; // 653.45
+export const RING_SIZE = 104;
+export const RING_STROKE = 15;
+export const RING_R = 44;
+export const RING_C = 2 * Math.PI * RING_R; // 276.46
 
-export const MEAL_COLORS: Record<MealType, string> = {
-  breakfast: D.accent,
-  lunch: '#3bc9ff',
-  snack: '#6cf0bb',
-  dinner: D.amber,
-};
+/** Fibre has no profile target; 30 g is the general adult guideline. */
+export const FIBRE_TARGET_G = 30;
 
 export const MEAL_LABELS: Record<MealType, string> = {
   breakfast: 'Breakfast',
@@ -36,18 +32,10 @@ export interface HomeState {
   today: LogEntry[];
   week: RangeInsights;
   monthMap: Record<string, number>;
-  recentMeasurements: BodyMeasurement[];
   allMeasurements: BodyMeasurement[];
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
-
-export function getGreeting(): string {
-  const h = dayjs().hour();
-  if (h < 12) return 'Good morning';
-  if (h < 17) return 'Good afternoon';
-  return 'Good evening';
-}
 
 export function inferMeal(): MealType {
   const h = dayjs().hour();
@@ -77,6 +65,8 @@ export function getDayInitial(isoDate: string): string {
   return ['S', 'M', 'T', 'W', 'T', 'F', 'S'][day];
 }
 
+type MeasureKey = 'weight_kg' | 'waist_cm';
+
 /**
  * Most recent recorded value of a measurement field, with the day it was recorded.
  * Weight and waist are logged independently, so each field is carried forward from its
@@ -85,13 +75,49 @@ export function getDayInitial(isoDate: string): string {
  */
 export function latestMeasured(
   all: BodyMeasurement[],
-  key: 'weight_kg' | 'waist_cm'
+  key: MeasureKey
 ): { value: number; date: string } | null {
   for (let i = all.length - 1; i >= 0; i--) {
     const v = all[i][key];
     if (v != null) return { value: v, date: all[i].measured_on };
   }
   return null;
+}
+
+/**
+ * The change line under a body card: "−2.2 kg in 30 days". Compares the latest reading
+ * with the last one on or before the start of the window; with no reading that old it
+ * falls back to the first reading ("since 2 Oct"). Derived for display only.
+ */
+export function changeLine(
+  all: BodyMeasurement[],
+  key: MeasureKey,
+  unit: string,
+  todayISO: string,
+  days = 30
+): string {
+  const latest = latestMeasured(all, key);
+  if (!latest) return 'No readings yet';
+  const windowStart = addDays(todayISO, -days);
+  let base: { value: number; date: string } | null = null;
+  for (const m of all) {
+    const v = m[key];
+    if (v == null) continue;
+    if (m.measured_on <= windowStart) base = { value: v, date: m.measured_on };
+  }
+  let suffix = `in ${days} days`;
+  if (!base) {
+    const first = all.find((m) => m[key] != null);
+    if (!first || first.measured_on === latest.date) {
+      return latest.date === todayISO ? 'Today' : `as of ${dayjs(latest.date).format('D MMM')}`;
+    }
+    base = { value: first[key]!, date: first.measured_on };
+    suffix = `since ${dayjs(first.measured_on).format('D MMM')}`;
+  }
+  const delta = Math.round((latest.value - base.value) * 10) / 10;
+  if (delta === 0) return `No change ${suffix}`;
+  const sign = delta < 0 ? '−' : '+';
+  return `${sign}${Math.abs(delta).toFixed(1)} ${unit} ${suffix}`;
 }
 
 /**
@@ -121,13 +147,4 @@ export function buildSparkPoints(values: number[], W: number, H: number): string
       return `${x.toFixed(1)},${y.toFixed(1)}`;
     })
     .join(' ');
-}
-
-export function buildAreaPath(pts: string, H: number): string {
-  const coords = pts.split(' ');
-  const first = coords[0];
-  const last = coords[coords.length - 1];
-  const fx = first.split(',')[0];
-  const lx = last.split(',')[0];
-  return `M${pts} L${lx},${H} L${fx},${H} Z`;
 }

@@ -14,14 +14,20 @@ import type { LogEntry, MealType } from '@/types/db';
 import {
   Card,
   Chip,
+  DestructiveButton,
   FieldRow,
+  formScrollProps,
+  GroupFooter,
   GroupHeader,
   PrimaryButton,
   Segmented,
   Stepper,
   TintButton,
 } from '@/ui/components';
-import { colors, type } from '@/ui/theme';
+import { int } from '@/ui/format';
+import { showToast } from '@/ui/toast';
+import { isGrams, qtyForSwitch, qtyStep } from '@/ui/quantity';
+import { colors, heroNumber, type } from '@/ui/theme';
 
 const MEAL_OPTS: { value: MealType; label: string }[] = [
   { value: 'breakfast', label: 'B’fast' },
@@ -97,8 +103,10 @@ export default function EditEntryScreen() {
     };
   }, [entryId]);
 
-  // Match the log screen: 10 g jumps for grams, 1 for unit measures.
-  const qtyStep = selected?.measure_name === 'grams' ? 10 : 1;
+  function chooseMeasure(m: MeasureOption) {
+    setQty((q) => qtyForSwitch(selected, m, q));
+    setSelected(m);
+  }
 
   const quantity = parseFloat(qty);
   const preview = useMemo(() => {
@@ -122,6 +130,7 @@ export default function EditEntryScreen() {
         date,
         status,
       });
+      showToast('Entry updated');
       router.back();
     } finally {
       setBusy(false);
@@ -131,6 +140,7 @@ export default function EditEntryScreen() {
   function onDelete() {
     confirmDestructive('Delete entry?', 'This removes it from your diary.', 'Delete', async () => {
       await deleteLogEntry(entryId);
+      showToast('Entry deleted');
       router.back();
     });
   }
@@ -154,7 +164,7 @@ export default function EditEntryScreen() {
     setDate(dayjs(date).add(d, 'day').format('YYYY-MM-DD'));
 
   return (
-    <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
+    <ScrollView style={styles.screen} contentContainerStyle={styles.content} {...formScrollProps}>
       <Text style={styles.name}>{entry.food_name}</Text>
 
       <GroupHeader>Meal</GroupHeader>
@@ -162,13 +172,13 @@ export default function EditEntryScreen() {
 
       <GroupHeader>Date</GroupHeader>
       <Card>
-        <FieldRow label="Date" first>
+        <FieldRow label="Date" first minHeight={50}>
           <View style={styles.dateRow}>
-            <Pressable onPress={() => shiftDay(-1)} style={styles.navBtn} hitSlop={8}>
+            <Pressable onPress={() => shiftDay(-1)} style={styles.navBtn} hitSlop={8} accessibilityLabel="Previous day">
               <Text style={styles.navText}>‹</Text>
             </Pressable>
             <Text style={styles.dateText}>{dayjs(date).format('ddd, D MMM')}</Text>
-            <Pressable onPress={() => shiftDay(1)} style={styles.navBtn} hitSlop={8}>
+            <Pressable onPress={() => shiftDay(1)} style={styles.navBtn} hitSlop={8} accessibilityLabel="Next day">
               <Text style={styles.navText}>›</Text>
             </Pressable>
           </View>
@@ -182,50 +192,72 @@ export default function EditEntryScreen() {
           <Chip
             key={m.measure_name}
             on={selected?.measure_name === m.measure_name}
-            label={m.measure_name + (m.measure_name !== 'grams' ? ` (${Math.round(m.grams_per_unit)}g)` : '')}
-            onPress={() => setSelected(m)}
+            label={m.measure_name + (!isGrams(m) ? ` (${Math.round(m.grams_per_unit)}g)` : '')}
+            onPress={() => chooseMeasure(m)}
           />
         ))}
       </View>
 
       <GroupHeader>Quantity</GroupHeader>
       <Card>
-        <FieldRow label="Quantity" first>
-          <Stepper value={qty} onChange={setQty} step={qtyStep} />
+        <FieldRow label="Quantity" first minHeight={50}>
+          <Stepper
+            value={qty}
+            onChange={setQty}
+            step={qtyStep(selected)}
+            unit={isGrams(selected) ? 'g' : undefined}
+          />
         </FieldRow>
       </Card>
 
       <Card style={styles.preview}>
         {preview ? (
           <>
-            <Text style={styles.previewKcal}>{Math.round(preview.kcal)} Cal</Text>
-            <Text style={styles.previewMacros}>
-              {Math.round(preview.grams)} g · P {gm(preview.protein_g)} · C {gm(preview.carb_g)} · F {gm(preview.fat_g)}
-            </Text>
+            <View style={styles.previewKcalRow}>
+              <Text style={styles.previewKcal}>{int(preview.kcal)}</Text>
+              <Text style={styles.previewUnit}>kcal</Text>
+            </View>
+            <View style={styles.previewMacros}>
+              <Macro letter="P" color={colors.protein} value={preview.protein_g} />
+              <Macro letter="C" color={colors.carbs} value={preview.carb_g} />
+              <Macro letter="F" color={colors.fat} value={preview.fat_g} />
+            </View>
           </>
         ) : (
           <Text style={styles.previewHint}>Enter a quantity.</Text>
         )}
       </Card>
+      {preview ? <GroupFooter>{int(preview.grams)} g</GroupFooter> : null}
 
       {entry.status === 'planned' && date <= TODAY() ? (
         <TintButton
           title="Ate it — confirm plan"
-          onPress={() => confirmEntry(entryId).then(() => router.back())}
+          onPress={() =>
+            confirmEntry(entryId).then(() => {
+              showToast('Marked as eaten');
+              router.back();
+            })
+          }
           style={styles.confirm}
         />
       ) : null}
 
       <PrimaryButton
-        title={busy ? 'Saving…' : 'Save changes'}
+        title={busy ? 'Saving…' : 'Save Changes'}
         onPress={onSave}
         disabled={!preview || busy}
         style={styles.save}
       />
-      <Pressable style={styles.delete} onPress={onDelete}>
-        <Text style={styles.deleteText}>Delete entry</Text>
-      </Pressable>
+      <DestructiveButton title="Delete Entry" onPress={onDelete} style={styles.delete} />
     </ScrollView>
+  );
+}
+
+function Macro({ letter, color, value }: { letter: string; color: string; value: number | null }) {
+  return (
+    <Text style={styles.macroText}>
+      <Text style={[styles.macroLetter, { color }]}>{letter}</Text> {gm(value)}
+    </Text>
   );
 }
 
@@ -235,22 +267,33 @@ function gm(n: number | null): string {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.bg },
-  content: { padding: 16, paddingBottom: 48 },
+  content: { paddingHorizontal: 16, paddingTop: 4, paddingBottom: 40 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.bg },
   notFound: { ...type.body, color: colors.muted },
-  name: { ...type.title1, color: colors.ink, marginTop: 4, marginBottom: 4 },
+  name: { ...type.title1, color: colors.ink, paddingHorizontal: 4 },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  dateRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  navBtn: { paddingHorizontal: 8 },
-  navText: { fontSize: 24, color: colors.leafDark, fontWeight: '500' },
-  dateText: { ...type.body, color: colors.ink, fontWeight: '500', minWidth: 110, textAlign: 'center' },
-  planNote: { ...type.footnote, color: colors.saffron, marginTop: 6, marginLeft: 16 },
-  preview: { marginTop: 24, padding: 18, alignItems: 'center' },
-  previewKcal: { fontSize: 28, fontWeight: '700', color: colors.ink },
-  previewMacros: { ...type.subhead, marginTop: 4, color: colors.muted },
+  dateRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginRight: -6 },
+  navBtn: { width: 32, alignItems: 'center' },
+  navText: { fontSize: 26, lineHeight: 30, color: colors.leaf },
+  dateText: { ...type.body, color: colors.ink, minWidth: 110, textAlign: 'center' },
+  planNote: { ...type.footnote, color: colors.saffron, marginTop: 7, marginLeft: 16 },
+  preview: {
+    marginTop: 24,
+    paddingTop: 14,
+    paddingHorizontal: 16,
+    paddingBottom: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  previewKcalRow: { flexDirection: 'row', alignItems: 'baseline', gap: 5 },
+  previewKcal: heroNumber(32),
+  previewUnit: { ...type.subhead, fontWeight: '600', color: colors.muted },
+  previewMacros: { flexDirection: 'row', gap: 12 },
+  macroText: { ...type.subhead, color: colors.ink },
+  macroLetter: { fontWeight: '600' },
   previewHint: { ...type.subhead, color: colors.muted },
   confirm: { marginTop: 24 },
-  save: { marginTop: 16 },
-  delete: { marginTop: 8, paddingVertical: 14, alignItems: 'center' },
-  deleteText: { ...type.body, color: colors.rose, fontWeight: '500' },
+  save: { marginTop: 24 },
+  delete: { marginTop: 8 },
 });
