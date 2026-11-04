@@ -5,6 +5,7 @@ import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from
 
 import { consumedTotals, plannedTotals } from '@/calc/dayTotals';
 import { gramsTotal, snapshotNutrition } from '@/calc/logEntry';
+import { isFavorite, setFavorite } from '@/db/favorites';
 import { getEntriesForDate, getLastPortion, logFood } from '@/db/logEntries';
 import { getProfile } from '@/db/profile';
 import { loadFoodForLogging } from '@/db/quickLog';
@@ -23,6 +24,7 @@ import {
 } from '@/ui/components';
 import { displayFoodName } from '@/ui/foodName';
 import { int, numberText } from '@/ui/format';
+import { Icon } from '@/ui/icons';
 import { MEAL_OPTS } from '@/ui/meals';
 import { NutritionPreview, PortionPicker, type DayImpact } from '@/ui/portion';
 import { initialQty, pickerMeasures } from '@/ui/quantity';
@@ -51,6 +53,7 @@ export default function LogEntryScreen() {
   const [qty, setQty] = useState('1');
   const [impact, setImpact] = useState<DayImpact | null>(null);
   const [saving, setSaving] = useState(false);
+  const [starred, setStarred] = useState(false);
   const picked = useRef(false);
 
   // Reload on focus so returning from "Edit details" shows the new values.
@@ -58,13 +61,15 @@ export default function LogEntryScreen() {
     useCallback(() => {
       let active = true;
       (async () => {
-        const [{ food: f, options }, last, entries, profile] = await Promise.all([
+        const [{ food: f, options }, last, entries, profile, fav] = await Promise.all([
           loadFoodForLogging(params.code, params.table),
           getLastPortion(kindToTable(params.table), params.code),
           getEntriesForDate(date),
           getProfile(),
+          isFavorite({ kind: params.table, code: params.code }),
         ]);
         if (!active) return;
+        setStarred(fav);
         // Grams leads and is selected, unless a custom food has its own saved default.
         const picker = pickerMeasures(options, params.table === 'custom');
         setFood(f ?? null);
@@ -106,6 +111,19 @@ export default function LogEntryScreen() {
     const totalGrams = gramsTotal(quantity, selected.grams_per_unit);
     return { grams: totalGrams, ...snapshotNutrition(food, totalGrams) };
   }, [food, selected, quantity]);
+
+  async function toggleStar() {
+    if (!food) return;
+    const next = !starred;
+    setStarred(next);
+    try {
+      await setFavorite(food, next);
+      showToast(next ? 'Added to favourites' : 'Removed from favourites');
+    } catch (e) {
+      setStarred(!next);
+      showError(e);
+    }
+  }
 
   async function onSave() {
     if (!food || !selected || !preview || saving) return;
@@ -155,15 +173,27 @@ export default function LogEntryScreen() {
         <View style={styles.titleBlock}>
           <View style={styles.titleRow}>
             <Text style={styles.eyebrow}>{kindLabel(food.kind).toUpperCase()}</Text>
-            {food.kind === 'custom' ? (
+            <View style={styles.titleActions}>
+              {food.kind === 'custom' ? (
+                <Pressable
+                  onPress={() => router.push({ pathname: '/custom-food', params: { code: food.code } })}
+                  hitSlop={12}
+                  accessibilityRole="button"
+                >
+                  <Text style={styles.editLink}>Edit details</Text>
+                </Pressable>
+              ) : null}
               <Pressable
-                onPress={() => router.push({ pathname: '/custom-food', params: { code: food.code } })}
-                hitSlop={12}
+                onPress={toggleStar}
+                style={styles.star}
+                hitSlop={8}
                 accessibilityRole="button"
+                accessibilityState={{ selected: starred }}
+                accessibilityLabel={starred ? 'Remove from favourites' : 'Add to favourites'}
               >
-                <Text style={styles.editLink}>Edit details</Text>
+                <Icon name={starred ? 'star-filled' : 'star'} size={24} color={starred ? colors.star : colors.muted} />
               </Pressable>
-            ) : null}
+            </View>
           </View>
           <Text style={styles.name}>{displayFoodName(food.name, food.kind)}</Text>
           <Text style={styles.meta}>
@@ -224,6 +254,8 @@ const styles = StyleSheet.create({
   titleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: 22 },
   eyebrow: { ...type.footnote, color: colors.muted, fontWeight: '600', letterSpacing: 0.2 },
   editLink: { ...type.subhead, color: colors.leaf },
+  titleActions: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  star: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center', marginRight: -6 },
   name: { ...type.title1, color: colors.ink },
   meta: { ...type.subhead, color: colors.muted },
   planBanner: { marginTop: 18, paddingVertical: 14, paddingHorizontal: 16, backgroundColor: colors.saffronBg },

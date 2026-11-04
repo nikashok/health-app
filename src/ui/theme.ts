@@ -68,6 +68,9 @@ export const colors = {
   trendOver: '#ff453a',
   trendUnder: 'rgba(48,209,88,0.22)' as string,
 
+  // Favourites
+  star: '#ffd60a',
+
   // Planned entries
   plannedRow: 'rgba(255,106,26,0.08)' as string,
   plannedPillBg: 'rgba(255,106,26,0.16)' as string,

@@ -182,6 +182,21 @@ export const BODY_MEASUREMENTS_DDL =
      updated_at  TEXT NOT NULL
    )`;
 
+/**
+ * Starred foods (Add Food shows them first). Added idempotently every launch, like
+ * body_measurements. `fav_key` = "<food_table>:<food_code>" is the primary key locally
+ * and the stable cross-store key for backup (remote keys on user_id + fav_key).
+ * food_name is a display copy only — favourites never carry nutrition.
+ */
+export const FAVORITE_FOODS_DDL =
+  `CREATE TABLE IF NOT EXISTS favorite_foods (
+     fav_key    TEXT PRIMARY KEY,
+     food_table TEXT NOT NULL,
+     food_code  TEXT NOT NULL,
+     food_name  TEXT NOT NULL,
+     created_at TEXT NOT NULL
+   )`;
+
 /** Column we add to log_entries if missing (SQLite has no ADD COLUMN IF NOT EXISTS). */
 export const LOG_ENTRIES_SYNC_UUID_COLUMN = 'sync_uuid';
 export const ADD_LOG_ENTRIES_SYNC_UUID =

@@ -12,6 +12,7 @@ import { snapshotNutrition, gramsTotal } from '@/calc/logEntry';
 import type { EntryStatus, FoodTable, LogEntry, MealType } from '@/types/db';
 
 import { getDatabase } from './database';
+import type { SqlDb } from './migrate';
 import {
   CONFIRM_DAY,
   CONFIRM_ENTRY,
@@ -64,38 +65,54 @@ async function uuidFor(id: number): Promise<string | null> {
  * insert a log_entries row (with a sync_uuid), and queue it for backup. Returns the id.
  */
 export async function logFood(p: LogFoodParams): Promise<number> {
-  const db = getDatabase();
+  const [id] = await logFoods([p]);
+  return id;
+}
+
+/** Insert one snapshot row + its outbox key. Must run inside the caller's transaction. */
+async function insertEntryTx(db: SqlDb, p: LogFoodParams): Promise<number> {
   const grams = gramsTotal(p.quantity, p.gramsPerUnit);
   const snap = snapshotNutrition(p.food, grams);
   const now = new Date().toISOString();
   const uuid = newSyncId();
-  let id = 0;
+  const result = await db.runAsync(
+    INSERT_LOG_ENTRY,
+    p.date,
+    p.meal,
+    p.status ?? 'logged',
+    p.food.code,
+    kindToTable(p.food.kind),
+    p.food.name,
+    p.measureName,
+    p.quantity,
+    grams,
+    snap.kcal,
+    snap.protein_g,
+    snap.fat_g,
+    snap.carb_g,
+    snap.fibre_g,
+    now,
+    now
+  );
+  const id = result.lastInsertRowId;
+  await db.runAsync('UPDATE log_entries SET sync_uuid = ? WHERE id = ?', uuid, id);
+  await enqueue(db, 'log_entries', uuid);
+  return id;
+}
+
+/**
+ * Log several foods at once (a usual / repeated meal) in ONE transaction: all or nothing.
+ * Each row is snapshotted on the per-100g basis exactly like a single log. Returns ids.
+ */
+export async function logFoods(items: LogFoodParams[]): Promise<number[]> {
+  if (items.length === 0) return [];
+  const db = getDatabase();
+  const ids: number[] = [];
   await db.withTransactionAsync(async () => {
-    const result = await db.runAsync(
-      INSERT_LOG_ENTRY,
-      p.date,
-      p.meal,
-      p.status ?? 'logged',
-      p.food.code,
-      kindToTable(p.food.kind),
-      p.food.name,
-      p.measureName,
-      p.quantity,
-      grams,
-      snap.kcal,
-      snap.protein_g,
-      snap.fat_g,
-      snap.carb_g,
-      snap.fibre_g,
-      now,
-      now
-    );
-    id = result.lastInsertRowId;
-    await db.runAsync('UPDATE log_entries SET sync_uuid = ? WHERE id = ?', uuid, id);
-    await enqueue(db, 'log_entries', uuid);
+    for (const p of items) ids.push(await insertEntryTx(db, p));
   });
   scheduleDrain();
-  return id;
+  return ids;
 }
 
 /**
@@ -152,12 +169,20 @@ export async function moveLogEntry(
 }
 
 /** Delete an entry (EDIT-2 / PLAN-6). The drain sees the row gone and deletes it remotely. */
-export async function deleteLogEntry(id: number): Promise<void> {
+export function deleteLogEntry(id: number): Promise<void> {
+  return deleteLogEntries([id]);
+}
+
+/** Delete several entries in one transaction (Undo of a "Log all"). */
+export async function deleteLogEntries(ids: number[]): Promise<void> {
+  if (ids.length === 0) return;
   const db = getDatabase();
   await db.withTransactionAsync(async () => {
-    const uuid = await uuidFor(id);
-    await db.runAsync(DELETE_LOG_ENTRY, id);
-    if (uuid) await enqueue(db, 'log_entries', uuid);
+    for (const id of ids) {
+      const uuid = await uuidFor(id);
+      await db.runAsync(DELETE_LOG_ENTRY, id);
+      if (uuid) await enqueue(db, 'log_entries', uuid);
+    }
   });
   scheduleDrain();
 }

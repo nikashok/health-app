@@ -3,7 +3,7 @@ import dayjs from 'dayjs';
 import type { useRouter } from 'expo-router';
 
 import { addDays } from '@/calc/insights';
-import type { BodyMeasurement, LogEntry, UserProfile } from '@/types/db';
+import type { BodyMeasurement, LogEntry, MealType, UserProfile } from '@/types/db';
 
 /** The expo-router navigator, passed to Home sub-components that navigate. */
 export type HomeRouter = ReturnType<typeof useRouter>;
@@ -15,6 +15,8 @@ export interface HomeState {
   today: LogEntry[];
   allMeasurements: BodyMeasurement[];
   streak: number;
+  /** Your usual foods per meal (derived, never stored) — a hint on empty meal rows. */
+  usual: Partial<Record<MealType, string>>;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────

@@ -6,7 +6,20 @@
 import type { MealType } from '@/types/db';
 
 import { getDatabase } from './database';
-import { ANY_LOGGED, DAILY_KCAL_RANGE, LOGGED_DATES_DESC, MEAL_KCAL_FOR_DATE } from './insightsSql';
+import type { PatternEntry } from '@/calc/foodPatterns';
+
+import {
+  ANY_LOGGED,
+  DAILY_KCAL_RANGE,
+  LOGGED_DATES_DESC,
+  LOGGED_ENTRIES_BETWEEN,
+  MEAL_KCAL_FOR_DATE,
+} from './insightsSql';
+
+/** Logged rows from `since` up to (not including) `before`, for usual/last-meal patterns. */
+export function getPatternEntries(since: string, before: string): Promise<PatternEntry[]> {
+  return getDatabase().getAllAsync<PatternEntry>(LOGGED_ENTRIES_BETWEEN, since, before);
+}
 
 /** Days with logged intake on or before `upTo`, newest first (for the streak). */
 export async function getLoggedDates(upTo: string, limit = 3660): Promise<string[]> {

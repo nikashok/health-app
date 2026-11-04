@@ -9,7 +9,7 @@ import { gramsTotal, snapshotNutrition } from '@/calc/logEntry';
 import type { MealType } from '@/types/db';
 
 import { getCustomFood } from './customFoods';
-import { logFood } from './logEntries';
+import { logFood, logFoods, type LogFoodParams } from './logEntries';
 import { getMeasures, type MeasureOption } from './measures';
 import { getByCodeAndTable, type SearchResult } from './search';
 import type { FoodKind } from './searchSql';
@@ -76,6 +76,43 @@ export async function quickLog(
   });
   const { kcal } = snapshotNutrition(food, gramsTotal(item.quantity, measure.grams_per_unit));
   return { id, food, kcal, measureName: measure.measure_name, quantity: item.quantity };
+}
+
+/**
+ * Log a whole meal (usual / repeat) in one transaction. Each item is resolved fresh like
+ * `quickLog`; items whose food or measure no longer exists are skipped and counted.
+ */
+export async function quickLogMany(
+  items: QuickLogItem[],
+  meal: MealType,
+  date: string,
+  isPlan: boolean
+): Promise<{ ids: number[]; kcal: number; skipped: number }> {
+  const resolved = await Promise.all(
+    items.map(async (item) => {
+      if (!(item.quantity > 0)) return null;
+      const { food, options } = await loadFoodForLogging(item.code, item.kind);
+      const measure = food ? options.find((o) => o.measure_name === item.measureName) : undefined;
+      if (!food || !measure) return null;
+      const params: LogFoodParams = {
+        food,
+        measureName: measure.measure_name,
+        gramsPerUnit: measure.grams_per_unit,
+        quantity: item.quantity,
+        meal,
+        date,
+        status: isPlan ? 'planned' : 'logged',
+      };
+      return params;
+    })
+  );
+  const ok = resolved.filter((p): p is LogFoodParams => p != null);
+  const ids = await logFoods(ok);
+  const kcal = ok.reduce(
+    (s, p) => s + snapshotNutrition(p.food, gramsTotal(p.quantity, p.gramsPerUnit)).kcal,
+    0
+  );
+  return { ids, kcal, skipped: items.length - ok.length };
 }
 
 /** "2 × roti", "150 g" — how a portion reads in a list or a toast. */

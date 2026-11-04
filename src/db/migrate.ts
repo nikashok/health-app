@@ -10,6 +10,7 @@ import {
   ADD_LOG_ENTRIES_SYNC_UUID,
   BODY_MEASUREMENTS_DDL,
   DISH_MEASURES_INSERT,
+  FAVORITE_FOODS_DDL,
   FTS_PROBE,
   GLOBAL_MEASURES,
   GLOBAL_MEASURES_INSERT,
@@ -80,6 +81,7 @@ export async function ensureSyncSchema(db: SqlDb): Promise<void> {
     await db.execAsync(ddl);
   }
   await db.execAsync(BODY_MEASUREMENTS_DDL);
+  await db.execAsync(FAVORITE_FOODS_DDL);
   const cols = await db.getAllAsync<{ name: string }>(
     'PRAGMA table_info(log_entries)'
   );

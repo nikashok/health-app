@@ -23,11 +23,14 @@ const names = (entries: LogEntry[]) =>
 export function TodayMeals({
   today,
   todayISO,
+  usual,
   router,
   onConfirmMeal,
 }: {
   today: LogEntry[];
   todayISO: string;
+  /** Usual foods per meal, shown on empty rows ("Usual: poha · chai"); + logs them in one more tap. */
+  usual: Partial<Record<MealType, string>>;
   router: HomeRouter;
   onConfirmMeal: (meal: MealType) => void;
 }) {
@@ -53,7 +56,11 @@ export function TodayMeals({
                 <Text style={styles.mealName}>{label}</Text>
                 {logged.length > 0 || planned.length === 0 ? (
                   <Text style={styles.mealSub} numberOfLines={1}>
-                    {logged.length > 0 ? names(logged) : 'Nothing logged yet'}
+                    {logged.length > 0
+                      ? names(logged)
+                      : usual[meal]
+                        ? `Usual: ${usual[meal]}`
+                        : 'Nothing logged yet'}
                   </Text>
                 ) : null}
                 {planned.length > 0 ? (

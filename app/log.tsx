@@ -1,6 +1,6 @@
 import dayjs from 'dayjs';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   ActivityIndicator,
@@ -12,21 +12,58 @@ import {
   View,
 } from 'react-native';
 
+import { lastMeal, samePattern, usualMeal, type MealPattern, type PatternEntry } from '@/calc/foodPatterns';
 import { addDays } from '@/calc/insights';
-import { deleteLogEntry, getRecentFoodsForMeal, type RecentFood } from '@/db/logEntries';
-import { portionText, quickLog } from '@/db/quickLog';
+import { listFavorites, type FavoriteFood } from '@/db/favorites';
+import { getPatternEntries } from '@/db/insights';
+import {
+  deleteLogEntries,
+  deleteLogEntry,
+  getEntriesForDate,
+  getRecentFoodsForMeal,
+  type RecentFood,
+} from '@/db/logEntries';
+import { portionText, quickLog, quickLogMany } from '@/db/quickLog';
 import { getFoodBoosts, getOwnServings, searchAll, type OwnServing, type SearchResult } from '@/db/search';
 import { tableToKind, type FoodKind } from '@/db/searchSql';
-import type { MealType } from '@/types/db';
+import type { FoodTable, MealType } from '@/types/db';
 import { BottomAction, Card, GroupFooter, GroupHeader, PrimaryButton, Segmented } from '@/ui/components';
 import { displayFoodName } from '@/ui/foodName';
 import { int, numberText } from '@/ui/format';
 import { Icon } from '@/ui/icons';
-import { MEAL_OPTS } from '@/ui/meals';
+import { MEAL_LABELS, MEAL_OPTS } from '@/ui/meals';
 import { colors, radius, type } from '@/ui/theme';
 import { showError, showToast } from '@/ui/toast';
 
-const recentKey = (r: RecentFood) => `${r.food_table}:${r.food_code ?? r.food_name}`;
+/** Something that can be re-logged in one tap: a recent food or a favourite. */
+interface QuickFood {
+  key: string;
+  food_table: FoodTable;
+  food_code: string | null;
+  food_name: string;
+  measure_name: string | null;
+  quantity: number | null;
+  kcal: number | null;
+}
+
+const fromRecent = (r: RecentFood): QuickFood => ({
+  key: `${r.food_table}:${r.food_code ?? r.food_name}`,
+  food_table: r.food_table,
+  food_code: r.food_code,
+  food_name: r.food_name,
+  measure_name: r.measure_name,
+  quantity: r.quantity,
+  kcal: r.kcal ?? null,
+});
+const fromFavorite = (f: FavoriteFood): QuickFood => ({
+  key: f.fav_key,
+  food_table: f.food_table,
+  food_code: f.food_code,
+  food_name: f.food_name,
+  measure_name: f.measure_name,
+  quantity: f.quantity,
+  kcal: f.kcal,
+});
 
 export default function LogScreen() {
   const router = useRouter();
@@ -37,12 +74,15 @@ export default function LogScreen() {
   const date = params.date ?? today();
   const isPlan = date > today();
 
-  // The meal is chosen here, where the one-tap "+" logs, as well as on Log Entry.
+  // The meal is chosen here, where the one-tap actions log, as well as on Log Entry.
   const [meal, setMeal] = useState<MealType>(params.meal ?? 'breakfast');
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<SearchResult[]>([]);
   const [servings, setServings] = useState<Map<string, OwnServing>>(new Map());
   const [recents, setRecents] = useState<RecentFood[]>([]);
+  const [favorites, setFavorites] = useState<FavoriteFood[]>([]);
+  const [history, setHistory] = useState<PatternEntry[]>([]);
+  const [startedMeals, setStartedMeals] = useState<Set<MealType>>(new Set());
   const [boosts, setBoosts] = useState<Map<string, number>>(new Map());
   const [searching, setSearching] = useState(false);
   const [justAdded, setJustAdded] = useState<string | null>(null);
@@ -50,18 +90,31 @@ export default function LogScreen() {
   useFocusEffect(
     useCallback(() => {
       let active = true;
-      Promise.all([getRecentFoodsForMeal(meal, addDays(today(), -60)), getFoodBoosts()]).then(
-        ([r, b]) => {
-          if (!active) return;
-          setRecents(r);
-          setBoosts(b);
-        }
-      );
+      Promise.all([
+        getRecentFoodsForMeal(meal, addDays(today(), -60)),
+        getFoodBoosts(),
+        listFavorites(),
+        getPatternEntries(addDays(date, -60), date),
+        getEntriesForDate(date),
+      ]).then(([r, b, f, h, day]) => {
+        if (!active) return;
+        setRecents(r);
+        setBoosts(b);
+        setFavorites(f);
+        setHistory(h);
+        setStartedMeals(new Set(day.map((e) => e.meal_type)));
+      });
       return () => {
         active = false;
       };
-    }, [meal])
+    }, [meal, date])
   );
+
+  // Your usual meal and the last time you had it — offered only while this meal is empty.
+  const shortcuts = useMemo(() => {
+    if (startedMeals.has(meal)) return { usual: null, last: null };
+    return { usual: usualMeal(history, meal, date), last: lastMeal(history, meal, date) };
+  }, [history, meal, date, startedMeals]);
 
   useEffect(() => {
     let cancelled = false;
@@ -99,10 +152,14 @@ export default function LogScreen() {
     router.push({ pathname: '/custom-food', params: { meal, date, ...(origin ? { origin } : {}) } });
   }
 
-  /** "+" on a recent food: log it now with its last portion; the toast offers Undo. */
-  async function quickAdd(item: RecentFood) {
+  /** "+" on a recent food or favourite: log its last portion now; the toast offers Undo. */
+  async function quickAdd(item: QuickFood) {
     if (!item.food_code) return;
     const kind = tableToKind(item.food_table);
+    if (!item.measure_name || !item.quantity) {
+      openFood(item.food_code, kind); // never logged yet — choose a portion first
+      return;
+    }
     try {
       const r = await quickLog(
         { code: item.food_code, kind, measureName: item.measure_name, quantity: item.quantity },
@@ -114,8 +171,8 @@ export default function LogScreen() {
         openFood(item.food_code, kind); // its measure is gone — choose a portion instead
         return;
       }
-      const key = recentKey(item);
-      setJustAdded(key);
+      setJustAdded(item.key);
+      setStartedMeals((s) => new Set(s).add(meal));
       showToast(
         `${isPlan ? 'Planned' : 'Logged'} ${displayFoodName(r.food.name, r.food.kind)} · ${portionText(
           r.measureName,
@@ -127,7 +184,7 @@ export default function LogScreen() {
             onPress: () =>
               deleteLogEntry(r.id)
                 .then(() => {
-                  setJustAdded((k) => (k === key ? null : k));
+                  setJustAdded((k) => (k === item.key ? null : k));
                   showToast('Removed');
                 })
                 .catch((e) => showError(e, 'Couldn’t undo — delete it from the Diary')),
@@ -139,9 +196,83 @@ export default function LogScreen() {
     }
   }
 
+  /** "Log all" on a usual / repeated meal: every item at once, then back, with Undo. */
+  async function logPattern(p: MealPattern, what: string) {
+    try {
+      const r = await quickLogMany(
+        p.items.map((i) => ({
+          code: i.food_code,
+          kind: tableToKind(i.food_table),
+          measureName: i.measure_name,
+          quantity: i.quantity,
+        })),
+        meal,
+        date,
+        isPlan
+      );
+      if (r.ids.length === 0) {
+        showToast('Those foods are no longer available', { tone: 'error' });
+        return;
+      }
+      const n = r.ids.length;
+      showToast(
+        `${isPlan ? 'Planned' : 'Logged'} ${what} · ${n} ${n === 1 ? 'item' : 'items'} · ${int(r.kcal)} kcal` +
+          (r.skipped > 0 ? ` (${r.skipped} no longer available)` : ''),
+        {
+          action: {
+            label: 'Undo',
+            onPress: () =>
+              deleteLogEntries(r.ids)
+                .then(() => showToast('Removed'))
+                .catch((e) => showError(e, 'Couldn’t undo — delete them from the Diary')),
+          },
+        }
+      );
+      if (router.canGoBack()) router.back();
+    } catch (e) {
+      showError(e);
+    }
+  }
+
   const trimmed = query.trim();
-  const showRecents = trimmed.length === 0 && recents.length > 0;
+  const quick = recents.map(fromRecent);
+  const favs = favorites.map(fromFavorite);
+  const showHome = trimmed.length === 0;
   const noMatch = trimmed.length > 0 && !searching && results.length === 0;
+  const mealWord = MEAL_LABELS[meal].toLowerCase();
+  const verb = isPlan ? 'Plan all' : 'Log all';
+
+  const header = (
+    <>
+      <MealShortcuts
+        usual={shortcuts.usual}
+        last={shortcuts.last}
+        date={date}
+        mealWord={mealWord}
+        verb={verb}
+        onLog={logPattern}
+      />
+      {favs.length > 0 ? (
+        <>
+          <GroupHeader>Favourites</GroupHeader>
+          <Card>
+            {favs.map((f, i) => (
+              <View key={f.key} style={[styles.inlineRow, i > 0 && styles.cardRowDivider]}>
+                <QuickRow
+                  item={f}
+                  added={justAdded === f.key}
+                  onOpen={() => openFood(f.food_code, tableToKind(f.food_table))}
+                  onAdd={() => quickAdd(f)}
+                />
+              </View>
+            ))}
+          </Card>
+        </>
+      ) : null}
+      {quick.length > 0 ? <GroupHeader>Recent</GroupHeader> : null}
+    </>
+  );
+
   return (
     <View style={styles.container}>
       <Segmented options={MEAL_OPTS} value={meal} onChange={setMeal} />
@@ -188,24 +319,31 @@ export default function LogScreen() {
         </View>
       ) : null}
 
-      {showRecents ? (
+      {showHome ? (
         <FlatList
-          data={recents}
+          data={quick}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
           contentContainerStyle={styles.listContent}
-          keyExtractor={recentKey}
-          ListHeaderComponent={<GroupHeader>Recent</GroupHeader>}
+          keyExtractor={(item) => item.key}
+          ListHeaderComponent={header}
+          ListEmptyComponent={
+            favs.length === 0 && !shortcuts.usual && !shortcuts.last ? (
+              <GroupHeader>Start typing to search</GroupHeader>
+            ) : null
+          }
           ListFooterComponent={
-            <GroupFooter>
-              Foods you have at this meal come first. Tap + to log the same portion again.
-            </GroupFooter>
+            quick.length > 0 ? (
+              <GroupFooter>
+                Foods you have at this meal come first. Tap + to log the same portion again.
+              </GroupFooter>
+            ) : null
           }
           renderItem={({ item, index }) => (
-            <CardRow first={index === 0} last={index === recents.length - 1}>
-              <RecentRow
+            <CardRow first={index === 0} last={index === quick.length - 1}>
+              <QuickRow
                 item={item}
-                added={justAdded === recentKey(item)}
+                added={justAdded === item.key}
                 onOpen={() => openFood(item.food_code, tableToKind(item.food_table))}
                 onAdd={() => quickAdd(item)}
               />
@@ -219,11 +357,9 @@ export default function LogScreen() {
           keyboardDismissMode="on-drag"
           contentContainerStyle={styles.listContent}
           keyExtractor={(item) => `${item.kind}:${item.code}`}
-          ListHeaderComponent={
-            <GroupHeader>{trimmed ? 'Search results' : 'Start typing to search'}</GroupHeader>
-          }
+          ListHeaderComponent={<GroupHeader>Search results</GroupHeader>}
           ListEmptyComponent={
-            trimmed && !searching ? (
+            !searching ? (
               <Card style={styles.emptyCard}>
                 <Text style={styles.emptyTitle}>No match found</Text>
                 <Text style={styles.emptyBody}>
@@ -259,6 +395,99 @@ export default function LogScreen() {
   );
 }
 
+/** "Your usual breakfast" and "Repeat yesterday's breakfast", each with Log all. */
+function MealShortcuts({
+  usual,
+  last,
+  date,
+  mealWord,
+  verb,
+  onLog,
+}: {
+  usual: MealPattern | null;
+  last: MealPattern | null;
+  date: string;
+  mealWord: string;
+  verb: string;
+  onLog: (p: MealPattern, what: string) => void;
+}) {
+  const showLast = last != null && !samePattern(usual, last);
+  if (!usual && !showLast) return null;
+  const lastTitle =
+    last && last.date === addDays(date, -1)
+      ? `Repeat yesterday’s ${mealWord}`
+      : last
+        ? `Repeat ${mealWord} from ${dayjs(last.date).format('ddd D MMM')}`
+        : '';
+  return (
+    <>
+      <GroupHeader>{`Quick ${mealWord}`}</GroupHeader>
+      <Card>
+        {usual ? (
+          <ShortcutRow
+            first
+            title={`Your usual ${mealWord}`}
+            pattern={usual}
+            detail={`${usual.days} times in the last 60 days`}
+            verb={verb}
+            onLog={() => onLog(usual, `usual ${mealWord}`)}
+          />
+        ) : null}
+        {showLast && last ? (
+          <ShortcutRow
+            first={!usual}
+            title={lastTitle}
+            pattern={last}
+            verb={verb}
+            onLog={() => onLog(last, mealWord)}
+          />
+        ) : null}
+      </Card>
+    </>
+  );
+}
+
+function ShortcutRow({
+  first,
+  title,
+  pattern,
+  detail,
+  verb,
+  onLog,
+}: {
+  first: boolean;
+  title: string;
+  pattern: MealPattern;
+  detail?: string;
+  verb: string;
+  onLog: () => void;
+}) {
+  const names = pattern.items.map((i) => displayFoodName(i.food_name, i.food_table)).join(' · ');
+  return (
+    <View style={[styles.inlineRow, !first && styles.cardRowDivider]}>
+      <View style={styles.shortcut}>
+        <View style={styles.shortcutMain}>
+          <Text style={styles.shortcutTitle}>{title}</Text>
+          <Text style={styles.meta} numberOfLines={2}>
+            {names}
+          </Text>
+          <Text style={styles.meta}>
+            ≈ {int(pattern.kcal)} kcal{detail ? ` · ${detail}` : ''}
+          </Text>
+        </View>
+        <Pressable
+          onPress={onLog}
+          style={({ pressed }) => [styles.logAll, pressed && styles.addBtnPressed]}
+          accessibilityRole="button"
+          accessibilityLabel={`${verb}: ${title}, ${names}`}
+        >
+          <Text style={styles.logAllText}>{verb}</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
 /** Wraps a list item so the whole FlatList reads as one rounded grouped card. */
 function CardRow({
   children,
@@ -276,33 +505,35 @@ function CardRow({
   );
 }
 
-function RecentRow({
+function QuickRow({
   item,
   added,
   onOpen,
   onAdd,
 }: {
-  item: RecentFood;
+  item: QuickFood;
   added: boolean;
   onOpen: () => void;
   onAdd: () => void;
 }) {
   const name = displayFoodName(item.food_name, item.food_table);
-  const portion = portionText(item.measure_name, item.quantity);
+  const portion =
+    item.measure_name && item.quantity ? portionText(item.measure_name, item.quantity) : null;
   return (
     <View style={styles.recentRow}>
       <Pressable
         style={({ pressed }) => [styles.recentMain, pressed && styles.rowPressed]}
         onPress={onOpen}
         accessibilityRole="button"
-        accessibilityLabel={`${name}, last ${portion}. Choose a portion`}
+        accessibilityLabel={`${name}${portion ? `, last ${portion}` : ''}. Choose a portion`}
       >
         <Text style={styles.name} numberOfLines={2}>
           {name}
         </Text>
         <Text style={styles.meta}>
-          {portion}
-          {item.kcal != null ? ` · ${int(item.kcal)} kcal` : ''}
+          {portion
+            ? `${portion}${item.kcal != null ? ` · ${int(item.kcal)} kcal` : ''}`
+            : 'Not logged yet — tap to choose a portion'}
         </Text>
       </Pressable>
       <Pressable
@@ -310,7 +541,7 @@ function RecentRow({
         style={({ pressed }) => [styles.addBtn, added && styles.addBtnDone, pressed && styles.addBtnPressed]}
         hitSlop={4}
         accessibilityRole="button"
-        accessibilityLabel={`Log ${portion} ${name} now`}
+        accessibilityLabel={portion ? `Log ${portion} ${name} now` : `Choose a portion of ${name}`}
       >
         <Icon name={added ? 'check' : 'plus'} size={18} color={added ? colors.good : colors.leaf} strokeWidth={2.6} />
       </Pressable>
@@ -392,6 +623,7 @@ const styles = StyleSheet.create({
   cardRowLast: { borderBottomLeftRadius: radius.lg, borderBottomRightRadius: radius.lg },
   cardRowInner: { marginLeft: 16 },
   cardRowDivider: { borderTopWidth: 0.5, borderTopColor: colors.separator },
+  inlineRow: { marginLeft: 16 },
   row: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -413,6 +645,17 @@ const styles = StyleSheet.create({
   },
   addBtnDone: { backgroundColor: 'rgba(48,209,88,0.16)' },
   addBtnPressed: { opacity: 0.7 },
+  shortcut: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, paddingRight: 12 },
+  shortcutMain: { flex: 1, minWidth: 0, gap: 2 },
+  shortcutTitle: { ...type.headline, color: colors.ink },
+  logAll: {
+    height: 36,
+    paddingHorizontal: 14,
+    borderRadius: 18,
+    backgroundColor: colors.leaf,
+    justifyContent: 'center',
+  },
+  logAllText: { ...type.subhead, fontWeight: '600', color: '#ffffff' },
   rowPressed: { opacity: 0.6 },
   rowMain: { flex: 1, minWidth: 0, gap: 2 },
   chevron: { marginLeft: 8 },

@@ -4,9 +4,10 @@ import { useCallback, useState } from 'react';
 import { ActivityIndicator, RefreshControl, ScrollView, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { consumedTotals, plannedTotals } from '@/calc/dayTotals';
-import { streakFrom } from '@/calc/insights';
-import { getLoggedDates } from '@/db/insights';
+import { consumedTotals, MEAL_ORDER, plannedTotals } from '@/calc/dayTotals';
+import { usualMeal } from '@/calc/foodPatterns';
+import { addDays, streakFrom } from '@/calc/insights';
+import { getLoggedDates, getPatternEntries } from '@/db/insights';
 import { confirmMeal, getEntriesForDate, revertToPlanned } from '@/db/logEntries';
 import { getAllMeasurements } from '@/db/measurements';
 import { getProfile } from '@/db/profile';
@@ -14,6 +15,7 @@ import { reconcile } from '@/db/sync';
 import type { MealType } from '@/types/db';
 import { BottomAction } from '@/ui/components';
 import { DaySummaryCard } from '@/ui/DaySummaryCard';
+import { displayFoodName } from '@/ui/foodName';
 import { BodyTrends } from '@/ui/home/BodyTrends';
 import type { HomeState } from '@/ui/home/homeUtils';
 import { styles } from '@/ui/home/styles';
@@ -29,16 +31,23 @@ async function loadToday(): Promise<HomeState | null> {
   const profile = await getProfile();
   if (profile === null) return null;
   const todayISO = dayjs().format('YYYY-MM-DD');
-  const [todayEntries, allMeasurements, loggedDates] = await Promise.all([
+  const [todayEntries, allMeasurements, loggedDates, history] = await Promise.all([
     getEntriesForDate(todayISO),
     getAllMeasurements(),
     getLoggedDates(todayISO),
+    getPatternEntries(addDays(todayISO, -60), todayISO),
   ]);
+  const usual: HomeState['usual'] = {};
+  for (const meal of MEAL_ORDER) {
+    const u = usualMeal(history, meal, todayISO);
+    if (u) usual[meal] = u.items.map((i) => displayFoodName(i.food_name, i.food_table)).join(' · ');
+  }
   return {
     profile,
     today: todayEntries,
     allMeasurements,
     streak: streakFrom(loggedDates, todayISO),
+    usual,
   };
 }
 
@@ -87,7 +96,7 @@ export default function TodayScreen() {
     );
   }
 
-  const { profile, today, allMeasurements, streak } = state;
+  const { profile, today, allMeasurements, streak, usual } = state;
   const todayISO = dayjs().format('YYYY-MM-DD');
   const consumed = consumedTotals(today);
   const planned = plannedTotals(today);
@@ -142,7 +151,13 @@ export default function TodayScreen() {
             }
             onGoalPress={() => router.push('/onboarding')}
           />
-          <TodayMeals today={today} todayISO={todayISO} router={router} onConfirmMeal={confirmPlanned} />
+          <TodayMeals
+            today={today}
+            todayISO={todayISO}
+            usual={usual}
+            router={router}
+            onConfirmMeal={confirmPlanned}
+          />
           <View style={styles.sectionHead}>
             <Text style={styles.sectionTitle}>Body</Text>
           </View>

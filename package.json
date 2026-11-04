@@ -17,7 +17,8 @@
     "verify:m6": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/verify_m6.mjs",
     "verify:m7": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/verify_m7.mjs",
     "verify:web": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --disable-warning=DEP0205 --import ./scripts/ts-register.mjs scripts/verify_web.mjs",
-    "verify:all": "for m in 0 1 2 3 4 5 6 7; do npm run --silent verify:m$m || exit 1; done && npm run --silent verify:web",
+    "verify:ux": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --disable-warning=DEP0205 --import ./scripts/ts-register.mjs scripts/verify_ux.mjs",
+    "verify:all": "for m in 0 1 2 3 4 5 6 7; do npm run --silent verify:m$m || exit 1; done && npm run --silent verify:web && npm run --silent verify:ux",
     "build:web": "expo export --platform web",
     "test": "jest"
   },

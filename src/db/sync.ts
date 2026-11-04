@@ -20,9 +20,15 @@ import { getDatabase } from './database';
 import { INSERT_CUSTOM_FOOD } from './customFoodsSql';
 import { UPSERT_PROFILE } from './profileSql';
 import { requireUserId, supabase } from './supabase';
+import { isMissingTable } from './syncErrors';
 import type { SqlDb } from './migrate';
 
-type SyncTable = 'log_entries' | 'custom_foods' | 'user_profile' | 'body_measurements';
+type SyncTable =
+  | 'log_entries'
+  | 'custom_foods'
+  | 'user_profile'
+  | 'body_measurements'
+  | 'favorite_foods';
 
 /** Single-row profile key (local id is pinned to 1; remote keys on user_id). */
 const PROFILE_KEY = 'me';
@@ -45,12 +51,14 @@ const REMOTE_COLUMNS: Record<SyncTable, string[]> = {
     'targets_source', 'created_at', 'updated_at',
   ],
   body_measurements: ['measured_on', 'weight_kg', 'waist_cm', 'created_at', 'updated_at'],
+  favorite_foods: ['fav_key', 'food_table', 'food_code', 'food_name', 'created_at'],
 };
 const ON_CONFLICT: Record<SyncTable, string> = {
   log_entries: 'sync_uuid',
   custom_foods: 'user_id,code',
   user_profile: 'user_id',
   body_measurements: 'user_id,measured_on',
+  favorite_foods: 'user_id,fav_key',
 };
 /** Column used to delete a row remotely by its stable key (profile is never deleted). */
 const DELETE_KEY: Record<SyncTable, string> = {
@@ -58,7 +66,17 @@ const DELETE_KEY: Record<SyncTable, string> = {
   custom_foods: 'code',
   user_profile: 'user_id',
   body_measurements: 'measured_on',
+  favorite_foods: 'fav_key',
 };
+
+/**
+ * Tables that may not exist remotely yet because their migration is applied by hand
+ * (0004 for favourites). A push to a missing table is skipped — left queued, not counted
+ * as a failed attempt — so it never blocks the rest of the backup.
+ */
+const OPTIONAL_REMOTE: ReadonlySet<SyncTable> = new Set(['favorite_foods']);
+
+
 
 // ---- sync-status store (drives the indicator + "Back up now") --------------
 export interface SyncStatus {
@@ -125,6 +143,8 @@ function loadLocalRow(table: SyncTable, key: string): Promise<Row | null> {
     return db.getFirstAsync<Row>('SELECT * FROM custom_foods WHERE code = ?', key);
   if (table === 'body_measurements')
     return db.getFirstAsync<Row>('SELECT * FROM body_measurements WHERE measured_on = ?', key);
+  if (table === 'favorite_foods')
+    return db.getFirstAsync<Row>('SELECT * FROM favorite_foods WHERE fav_key = ?', key);
   return db.getFirstAsync<Row>('SELECT * FROM user_profile WHERE id = 1');
 }
 
@@ -170,6 +190,9 @@ export async function drainOutbox(): Promise<void> {
           it.row_key
         );
       } catch (e) {
+        // Remote table not created yet (its migration is applied by hand): keep the item
+        // queued for later and carry on with everything else.
+        if (OPTIONAL_REMOTE.has(it.table_name) && isMissingTable(e)) continue;
         await db.runAsync(
           'UPDATE sync_outbox SET attempts = attempts + 1 WHERE table_name = ? AND row_key = ?',
           it.table_name,
@@ -235,6 +258,14 @@ export async function hydrateFromSupabase(): Promise<void> {
     const r = await supabase.from('body_measurements').select('*').eq('user_id', uid);
     if (r.error) console.warn('[sync] body_measurements unavailable (run migration 0003?)', r.error);
     else measureData = (r.data ?? []) as Record<string, any>[];
+  }
+
+  // favorite_foods arrives with migration 0004, applied by hand — tolerate its absence.
+  let favoriteData: Record<string, any>[] = [];
+  {
+    const r = await supabase.from('favorite_foods').select('*').eq('user_id', uid);
+    if (r.error) console.warn('[sync] favorite_foods unavailable (run migration 0004?)', r.error);
+    else favoriteData = (r.data ?? []) as Record<string, any>[];
   }
 
   // Backfill any remote log_entries missing a sync_uuid BEFORE inserting locally, so
@@ -309,6 +340,14 @@ export async function hydrateFromSupabase(): Promise<void> {
         m.created_at ?? now, m.updated_at ?? now
       );
     }
+    // Favourites: insert any key not already local.
+    for (const f of favoriteData) {
+      await db.runAsync(
+        `INSERT INTO favorite_foods (fav_key, food_table, food_code, food_name, created_at)
+         VALUES (?, ?, ?, ?, ?) ON CONFLICT(fav_key) DO NOTHING`,
+        f.fav_key, f.food_table, f.food_code, f.food_name, f.created_at ?? new Date().toISOString()
+      );
+    }
     await db.runAsync(
       "INSERT INTO sync_meta (key, value) VALUES ('hydrated', '1') " +
         "ON CONFLICT(key) DO UPDATE SET value = '1'"
@@ -333,11 +372,13 @@ export async function reconcile(): Promise<void> {
   const measures = await db.getAllAsync<{ measured_on: string }>(
     'SELECT measured_on FROM body_measurements'
   );
+  const favorites = await db.getAllAsync<{ fav_key: string }>('SELECT fav_key FROM favorite_foods');
   const prof = await db.getFirstAsync('SELECT id FROM user_profile WHERE id = 1');
   await db.withTransactionAsync(async () => {
     for (const e of entries) await enqueue(db, 'log_entries', e.sync_uuid);
     for (const c of customs) await enqueue(db, 'custom_foods', c.code);
     for (const m of measures) await enqueue(db, 'body_measurements', m.measured_on);
+    for (const f of favorites) await enqueue(db, 'favorite_foods', f.fav_key);
     if (prof) await enqueue(db, 'user_profile', PROFILE_KEY);
   });
   await refreshPending();

@@ -97,15 +97,22 @@ export async function searchAll(
   return rankResults([...custom, ...reference], q, opts.boosts).slice(0, opts.limit ?? 60);
 }
 
+/** Starred foods get the largest boost (still within their match tier). */
+export const FAVORITE_BOOST = 15;
+
 /**
- * Per-food search boosts from your history: boostKey → 0..12 (more logs, more boost).
+ * Per-food search boosts: favourites 15, otherwise 0..12 from how often you've logged it.
  * Reads log_entries only to count — never for nutrition (CLAUDE.md rule 6).
  */
 export async function getFoodBoosts(): Promise<Map<string, number>> {
-  const rows = await getDatabase().getAllAsync<{ food_table: FoodTable; food_code: string; n: number }>(
-    LOGGED_FOOD_COUNTS
-  );
-  return new Map(rows.map((r) => [boostKey(tableToKind(r.food_table), r.food_code), historyBoost(r.n)]));
+  const db = getDatabase();
+  const [rows, favs] = await Promise.all([
+    db.getAllAsync<{ food_table: FoodTable; food_code: string; n: number }>(LOGGED_FOOD_COUNTS),
+    db.getAllAsync<{ food_table: FoodTable; food_code: string }>('SELECT food_table, food_code FROM favorite_foods'),
+  ]);
+  const boosts = new Map(rows.map((r) => [boostKey(tableToKind(r.food_table), r.food_code), historyBoost(r.n)]));
+  for (const f of favs) boosts.set(boostKey(tableToKind(f.food_table), f.food_code), FAVORITE_BOOST);
+  return boosts;
 }
 
 /** A dish's own default serving ("1 bowl" = 200 g), for "≈ kcal per serving" in results. */

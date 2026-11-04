@@ -32,5 +32,15 @@ export const LOGGED_DATES_DESC = `
    ORDER BY log_date DESC
    LIMIT ?`;
 
+/**
+ * Logged diary rows in [start, end) for food-pattern detection (usual / last meal). Reads
+ * snapshots only; the patterns derived from them are never stored (CLAUDE.md rule 5).
+ */
+export const LOGGED_ENTRIES_BETWEEN = `
+  SELECT log_date, meal_type, food_table, food_code, food_name, measure_name, quantity, kcal, created_at
+    FROM log_entries
+   WHERE status = 'logged' AND log_date >= ? AND log_date < ?
+   ORDER BY log_date, created_at`;
+
 /** Whether any logged entry exists at all (drives the new-user empty state). */
 export const ANY_LOGGED = `SELECT EXISTS(SELECT 1 FROM log_entries WHERE status='logged') AS has`;
