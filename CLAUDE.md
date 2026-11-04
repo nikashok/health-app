@@ -38,8 +38,17 @@ The "no backend" and "no weight tracking" lines above are historical. Shipped si
 - Supabase one-way backup + auth (`src/db/sync.ts`). Local SQLite remains the source of
   truth for all reads and writes.
 - `body_measurements` (daily weight/waist) + measurement screen.
-- Read-side insights layer (`src/calc/trend.ts`, `src/calc/tdee.ts`,
-  `src/calc/foodPatterns.ts`; `app/insights.tsx`).
+- Read-side insights layer: `src/calc/trend.ts` (trend weight), `src/calc/foodPatterns.ts`
+  (usual / last meal), shown on the Progress tab (`app/(tabs)/progress.tsx`). An adaptive
+  TDEE (`tdee.ts`) is NOT built — logged intake is usually under-reported, which would
+  bias it low.
+- 2026-11 UX pass: bottom tabs (Today · Diary · Progress); favourites (`favorite_foods`,
+  backed up via `supabase/migrations/0004_favorite_foods.sql`, applied by hand — until it
+  is, the backup skips favourites); one-tap "Log all" for a usual or repeated meal.
+  Favourites are no longer excluded. Planning templates (copy a day, saved templates)
+  remain out of scope.
+- One-tap logs (recents, favourites, Log all) resolve the food fresh and go through
+  `logFood`/`logFoods`, so they obey rules 1–2 like any other log.
 
 The four invariants above still hold. Two more now apply:
 5. Trend weight, TDEE, forecasts, and food-pattern stats are DERIVED views over

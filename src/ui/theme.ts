@@ -49,7 +49,7 @@ export const colors = {
   protein: '#fa2d5a',
   carbs: '#b4f000',
   fat: '#00d8e8',
-  fibre: '#a55cf5',
+  fibre: '#ad6af6', // 5.0:1 on cards (was #a55cf5, 4.4:1 — under AA for small labels)
 
   // Status
   good: '#30d158',           // on target, backed up, body metrics

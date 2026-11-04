@@ -28,6 +28,18 @@ const ACTIVITIES: { value: ActivityLevel; label: string }[] = [
   { value: 'active', label: 'Active' },
   { value: 'very_active', label: 'Very active' },
 ];
+/**
+ * What each level means. People tend to rate their own activity higher than it is, which
+ * inflates the calorie target — so say concretely what each level assumes.
+ */
+const ACTIVITY_HINTS: Record<ActivityLevel, string> = {
+  sedentary: 'Desk job, little walking, no regular exercise.',
+  light: 'On your feet some of the day, or exercise 1–3 days a week.',
+  moderate: 'Exercise 3–5 days a week, or a job with steady walking.',
+  active: 'Hard exercise 6–7 days a week, or a physical job.',
+  very_active: 'Physical job plus training, or training twice a day.',
+};
+
 const GOALS: { value: Goal; label: string }[] = [
   { value: 'lose', label: 'Lose' },
   { value: 'maintain', label: 'Maintain' },
@@ -191,6 +203,7 @@ export default function OnboardingScreen() {
           <Chip key={o.value} label={o.label} on={activity === o.value} onPress={() => setActivity(o.value)} />
         ))}
       </View>
+      {activity ? <GroupFooter>{ACTIVITY_HINTS[activity]}</GroupFooter> : null}
 
       <GroupHeader>Goal</GroupHeader>
       <Segmented options={GOALS} value={goal} onChange={setGoal} />
@@ -246,6 +259,7 @@ export default function OnboardingScreen() {
         )}
       </Card>
       {manualError ? <Text style={styles.errorText}>{manualError}</Text> : null}
+      {override && !manualError ? <MacroSum targets={manualTargets} /> : null}
       <GroupFooter>Use this as a starting point and adjust after you have real logged trends.</GroupFooter>
 
       <PrimaryButton
@@ -256,6 +270,22 @@ export default function OnboardingScreen() {
         style={styles.save}
       />
     </ScrollView>
+  );
+}
+
+/** "Macros add up to 1,950 kcal (calorie target 2,000)" — so manual targets stay consistent. */
+function MacroSum({ targets }: { targets: Record<keyof Targets, string> }) {
+  const p = parseFloat(targets.target_protein_g) || 0;
+  const c = parseFloat(targets.target_carb_g) || 0;
+  const f = parseFloat(targets.target_fat_g) || 0;
+  const goal = parseFloat(targets.target_kcal) || 0;
+  const sum = p * 4 + c * 4 + f * 9;
+  const off = goal > 0 && Math.abs(sum - goal) / goal > 0.1;
+  return (
+    <Text style={[styles.macroSum, off && styles.macroSumOff]}>
+      Protein, carbs and fat add up to {int(sum)} kcal (calorie target {int(goal)})
+      {off ? ' — adjust one so they roughly match.' : '.'}
+    </Text>
   );
 }
 
@@ -353,5 +383,7 @@ const styles = StyleSheet.create({
   targetHero: { ...heroNumber(22, '700') },
   targetSuffix: { ...type.subhead, color: colors.muted, fontWeight: '400', fontFamily: undefined },
   errorText: { ...type.footnote, color: colors.rose, marginTop: 8, marginLeft: 16 },
+  macroSum: { ...type.footnote, color: colors.muted, marginTop: 8, marginHorizontal: 16, lineHeight: 18 },
+  macroSumOff: { color: colors.energy },
   save: { marginTop: 24 },
 });

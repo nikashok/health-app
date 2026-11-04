@@ -7,6 +7,7 @@ import { initDatabase } from '@/db/database';
 import { supabase } from '@/db/supabase';
 import { bootstrapSync, drainOutbox } from '@/db/sync';
 import { AuthScreen } from '@/ui/AuthScreen';
+import { ConfirmHost } from '@/ui/ConfirmSheet';
 import { HomeButton } from '@/ui/HomeButton';
 import { colors, type } from '@/ui/theme';
 import { Toast } from '@/ui/toast';
@@ -121,6 +122,7 @@ export default function RootLayout() {
         <Stack.Screen name="measurement" options={{ title: 'Weight & Waist' }} />
       </Stack>
       <Toast />
+      <ConfirmHost />
     </>
   );
 }

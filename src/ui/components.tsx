@@ -84,7 +84,12 @@ export function CardHeader({
     <View style={styles.cardHeader}>
       <Text style={[styles.cardHeaderLabel, { color }]}>{label}</Text>
       {onPress ? (
-        <Pressable onPress={onPress} hitSlop={8}>
+        <Pressable
+          onPress={onPress}
+          hitSlop={12}
+          accessibilityRole="button"
+          accessibilityLabel={detail ? `${label}: ${detail}` : label}
+        >
           {right}
         </Pressable>
       ) : (
@@ -124,6 +129,7 @@ export function Row({
     <Pressable
       onPress={onPress}
       android_ripple={{ color: colors.fill }}
+      accessibilityRole="button"
       style={({ pressed }) => [styles.row, style, pressed && styles.rowPressed]}
     >
       {content}
@@ -323,6 +329,7 @@ export function Segmented<T extends string>({
           <Pressable
             key={o.value}
             onPress={() => onChange(o.value)}
+            hitSlop={{ top: 6, bottom: 6 }}
             accessibilityRole="button"
             accessibilityState={{ selected: on }}
             style={[styles.segment, on && styles.segmentOn]}
@@ -350,6 +357,8 @@ export function Chip({
   return (
     <Pressable
       onPress={onPress}
+      // 34 pt chip + 5 pt above and below = a 44 pt tap target without crowding the wrap.
+      hitSlop={{ top: 5, bottom: 5 }}
       accessibilityRole="button"
       accessibilityState={{ selected: on }}
       style={[styles.chip, on && styles.chipOn]}
@@ -400,6 +409,7 @@ export function Stepper({
           onChangeText={onChange}
           keyboardType="numeric"
           inputMode="decimal"
+          returnKeyType="done"
           selectTextOnFocus
           selectionColor={colors.leaf}
           accessibilityLabel={unit ? `Quantity in ${unit === 'g' ? 'grams' : unit}` : 'Quantity'}

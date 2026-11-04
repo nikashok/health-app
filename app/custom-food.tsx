@@ -3,6 +3,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Linking, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
+import { macroKcal, macrosDisagree, servingToPer100 } from '@/calc/customFood';
 import {
   deleteCustomFood,
   getCustomFood,
@@ -20,10 +21,18 @@ import {
   GroupHeader,
   PrimaryButton,
   Row,
+  Segmented,
   TintButton,
 } from '@/ui/components';
+import { int } from '@/ui/format';
 import { colors, radius, type } from '@/ui/theme';
 import { showError, showToast } from '@/ui/toast';
+
+type Basis = 'per100' | 'serving';
+const BASES: { value: Basis; label: string }[] = [
+  { value: 'per100', label: 'Per 100 g' },
+  { value: 'serving', label: 'Per serving' },
+];
 
 /**
  * Custom food screen. Two modes:
@@ -32,6 +41,8 @@ import { showError, showToast } from '@/ui/toast';
  *  - EDIT: a `code` param. Loads the existing food, lets you change its details or
  *    delete it, then returns. Editing only affects FUTURE logs — past diary entries
  *    keep their nutrition snapshot (CLAUDE.md rule 2).
+ * Values can be typed per 100 g or per serving (a pack label, a recipe portion); they
+ * are always stored per 100 g (CLAUDE.md rule 1).
  */
 export default function CustomFoodScreen() {
   const router = useRouter();
@@ -46,6 +57,8 @@ export default function CustomFoodScreen() {
 
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
+  const [basis, setBasis] = useState<Basis>('per100');
+  const [servingGrams, setServingGrams] = useState('');
   const [kcal, setKcal] = useState('');
   const [protein, setProtein] = useState('');
   const [fat, setFat] = useState('');
@@ -58,7 +71,7 @@ export default function CustomFoodScreen() {
   const [lookup, setLookup] = useState<NutritionLookup | null>(null);
   const [lookupError, setLookupError] = useState<string | null>(null);
 
-  // Edit mode: prefill from the stored food.
+  // Edit mode: prefill from the stored (per-100 g) food.
   useEffect(() => {
     if (!editCode) return;
     let active = true;
@@ -79,17 +92,24 @@ export default function CustomFoodScreen() {
   }, [editCode]);
 
   const energy = parseFloat(kcal);
-  const canSave = name.trim().length > 0 && energy >= 0 && !Number.isNaN(energy);
+  const serving = parseFloat(servingGrams);
+  const typed = { kcal: energy, protein: num(protein), carb: num(carb), fat: num(fat), fibre: num(fibre) };
+  const basisOk = basis === 'per100' || serving > 0;
+  const canSave = name.trim().length > 0 && energy >= 0 && !Number.isNaN(energy) && basisOk;
   const canLookup = name.trim().length >= 2 && !looking && !saving;
+  const implied = macroKcal(typed);
+  const mismatch = energy > 0 && macrosDisagree(typed);
+  const unitLabel = basis === 'per100' ? 'per 100 g' : serving > 0 ? `per ${int(serving)} g serving` : 'per serving';
 
-  // Ask the AI lookup for per-100g nutrition and pre-fill the macro fields. The user
-  // still reviews and saves — nothing is committed here.
+  // Ask the AI lookup for per-100g nutrition and pre-fill the fields. The user still
+  // reviews and saves — nothing is committed here.
   async function onLookup() {
     if (!canLookup) return;
     setLooking(true);
     setLookupError(null);
     try {
       const r = await lookupNutrition(name.trim(), description.trim());
+      setBasis('per100'); // the lookup always answers per 100 g
       setKcal(String(r.energy_kcal));
       setProtein(String(r.protein_g));
       setCarb(String(r.carb_g));
@@ -98,7 +118,7 @@ export default function CustomFoodScreen() {
       setLookup(r);
     } catch (e) {
       setLookup(null);
-      setLookupError(e instanceof Error ? e.message : String(e));
+      setLookupError(friendlyLookupError(e));
     } finally {
       setLooking(false);
     }
@@ -108,16 +128,20 @@ export default function CustomFoodScreen() {
     if (!canSave || saving) return;
     setSaving(true);
     try {
+      // Always store per 100 g; a per-serving entry is converted, and its serving becomes
+      // the default measure if none was given.
+      const per100 = basis === 'serving' ? servingToPer100(typed, serving) : typed;
       const grams = parseFloat(measureGrams);
+      const ownMeasure = measureName.trim();
       const fields = {
         name: name.trim(),
-        energy_kcal: energy,
-        protein_g: num(protein),
-        fat_g: num(fat),
-        carb_g: num(carb),
-        fibre_g: num(fibre),
-        default_measure_name: measureName.trim() || null,
-        default_grams_per_unit: grams > 0 ? grams : null,
+        energy_kcal: per100.kcal,
+        protein_g: per100.protein,
+        fat_g: per100.fat,
+        carb_g: per100.carb,
+        fibre_g: per100.fibre,
+        default_measure_name: ownMeasure || (basis === 'serving' ? 'serving' : null),
+        default_grams_per_unit: ownMeasure && grams > 0 ? grams : basis === 'serving' ? serving : null,
       };
       if (isEdit) {
         await updateCustomFood(editCode, fields);
@@ -167,12 +191,7 @@ export default function CustomFoodScreen() {
       <GroupHeader style={styles.firstHeader}>Food</GroupHeader>
       <Card>
         <InputRow first label="Name" value={name} onChangeText={setName} placeholder="e.g. Mom’s rajma" />
-        <InputRow label="Calories / 100 g" value={kcal} onChangeText={setKcal} placeholder="0" suffix="kcal" numeric />
       </Card>
-      <GroupFooter>
-        Name and calories are required. Every value on this screen is per 100 g of the food,
-        not per serving.
-      </GroupFooter>
 
       <GroupHeader>Describe it (optional)</GroupHeader>
       <TextInput
@@ -183,6 +202,7 @@ export default function CustomFoodScreen() {
         placeholderTextColor={colors.placeholder}
         selectionColor={colors.leaf}
         numberOfLines={1}
+        accessibilityLabel="Description for the nutrition lookup"
       />
 
       <TintButton
@@ -203,7 +223,12 @@ export default function CustomFoodScreen() {
             <View style={styles.sources}>
               <Text style={styles.sourcesLabel}>SOURCES</Text>
               {lookup.sources.map((s) => (
-                <Pressable key={s.url} onPress={() => Linking.openURL(s.url)} hitSlop={4}>
+                <Pressable
+                  key={s.url}
+                  onPress={() => Linking.openURL(s.url)}
+                  hitSlop={8}
+                  accessibilityRole="link"
+                >
                   <Text style={styles.sourceLink} numberOfLines={1}>
                     ↗ {s.title || s.url}
                   </Text>
@@ -220,25 +245,46 @@ export default function CustomFoodScreen() {
         </View>
       ) : null}
 
-      <GroupHeader>Macros per 100 g (optional)</GroupHeader>
-      <Card>
-        <InputRow first label="Protein" labelColor={colors.protein} value={protein} onChangeText={setProtein} placeholder="0" suffix="g" numeric />
+      <GroupHeader>Nutrition</GroupHeader>
+      <Segmented options={BASES} value={basis} onChange={setBasis} />
+      <Card style={styles.nutritionCard}>
+        {basis === 'serving' ? (
+          <InputRow first label="Serving size" value={servingGrams} onChangeText={setServingGrams} placeholder="0" suffix="g" numeric />
+        ) : null}
+        <InputRow first={basis === 'per100'} label="Calories" labelColor={colors.energy} value={kcal} onChangeText={setKcal} placeholder="0" suffix="kcal" numeric />
+        <InputRow label="Protein" labelColor={colors.protein} value={protein} onChangeText={setProtein} placeholder="0" suffix="g" numeric />
         <InputRow label="Carbs" labelColor={colors.carbs} value={carb} onChangeText={setCarb} placeholder="0" suffix="g" numeric />
         <InputRow label="Fat" labelColor={colors.fat} value={fat} onChangeText={setFat} placeholder="0" suffix="g" numeric />
         <InputRow label="Fibre" labelColor={colors.fibre} value={fibre} onChangeText={setFibre} placeholder="0" suffix="g" numeric />
       </Card>
+      {mismatch && implied != null ? (
+        <Text style={styles.mismatch}>
+          These macros add up to about {int(implied)} kcal, but calories say {int(energy)}. Worth a
+          second look.
+        </Text>
+      ) : null}
+      <GroupFooter>
+        Name and calories are required; macros are optional. All values are {unitLabel}
+        {basis === 'serving' ? ' and saved per 100 g' : ''}.
+      </GroupFooter>
 
       <GroupHeader>Default measure (optional)</GroupHeader>
       <Card>
-        <InputRow first label="Measure" value={measureName} onChangeText={setMeasureName} placeholder="bowl" autoCapitalize="none" />
-        <InputRow label="Grams / unit" value={measureGrams} onChangeText={setMeasureGrams} placeholder="0" suffix="g" numeric />
+        <InputRow first label="Measure" value={measureName} onChangeText={setMeasureName} placeholder={basis === 'serving' ? 'serving' : 'bowl'} autoCapitalize="none" />
+        <InputRow label="Grams / unit" value={measureGrams} onChangeText={setMeasureGrams} placeholder={basis === 'serving' && serving > 0 ? String(serving) : '0'} suffix="g" numeric />
       </Card>
 
       <PrimaryButton
         title={saving ? 'Saving…' : isEdit ? 'Save Changes' : 'Save & Log'}
         onPress={onSave}
         disabled={!canSave || saving}
-        hint={!canSave ? 'Add a name and calories to save.' : null}
+        hint={
+          !canSave
+            ? !basisOk
+              ? 'Enter the serving size in grams to save.'
+              : 'Add a name and calories to save.'
+            : null
+        }
         style={styles.save}
       />
       {isEdit ? (
@@ -246,6 +292,16 @@ export default function CustomFoodScreen() {
       ) : null}
     </ScrollView>
   );
+}
+
+/** Plain-language lookup failures — the form still works by hand either way. */
+function friendlyLookupError(e: unknown): string {
+  const msg = e instanceof Error ? e.message : String(e);
+  if (/not signed in|\(401\)|\(403\)/i.test(msg)) return 'Your session has expired — sign in again to use the lookup.';
+  if (/\(429\)/.test(msg)) return 'Too many lookups just now — try again in a minute.';
+  if (/\(504\)|timeout|timed out/i.test(msg)) return 'The lookup took too long — try again, or enter the values yourself.';
+  if (/reach the lookup service/i.test(msg)) return msg;
+  return 'The lookup didn’t work this time — you can still enter the values yourself.';
 }
 
 function InputRow({
@@ -283,6 +339,7 @@ function InputRow({
           keyboardType={numeric ? 'numeric' : 'default'}
           inputMode={numeric ? 'decimal' : 'text'}
           autoCapitalize={autoCapitalize}
+          accessibilityLabel={suffix ? `${label} in ${suffix}` : label}
         />
         {suffix ? <Text style={styles.suffix}>{suffix}</Text> : null}
       </View>
@@ -312,6 +369,8 @@ const styles = StyleSheet.create({
   suffix: { ...type.body, color: colors.muted },
   save: { marginTop: 24 },
   delete: { marginTop: 8 },
+  nutritionCard: { marginTop: 10 },
+  mismatch: { ...type.footnote, color: colors.energy, marginTop: 8, marginHorizontal: 16, lineHeight: 18 },
   descInput: {
     backgroundColor: colors.surface,
     borderRadius: radius.md,

@@ -51,24 +51,34 @@ export function TodayMeals({
           const open = () =>
             router.push({ pathname: '/diary', params: { date: todayISO, at: String(Date.now()) } });
           return (
-            <Row key={meal} first={i === 0} onPress={empty ? add : open} contentStyle={styles.mealRow}>
-              <View style={styles.mealInfo}>
-                <Text style={styles.mealName}>{label}</Text>
-                {logged.length > 0 || planned.length === 0 ? (
-                  <Text style={styles.mealSub} numberOfLines={1}>
-                    {logged.length > 0
-                      ? names(logged)
-                      : usual[meal]
-                        ? `Usual: ${usual[meal]}`
-                        : 'Nothing logged yet'}
-                  </Text>
-                ) : null}
-                {planned.length > 0 ? (
-                  <Text style={styles.mealPlanned} numberOfLines={1}>
-                    Planned: {names(planned)}
-                  </Text>
-                ) : null}
-              </View>
+            // A plain container: "open", "Ate it" and "+" are sibling buttons (never nested).
+            <Row key={meal} first={i === 0} contentStyle={styles.mealRow}>
+              <Pressable
+                onPress={empty ? add : open}
+                style={({ pressed }) => [styles.mealOpen, pressed && styles.mealOpenPressed]}
+                accessibilityRole="button"
+                accessibilityLabel={`${label}: ${
+                  logged.length > 0 ? `${names(logged)}, ${int(kcal)} kcal` : 'nothing logged'
+                }${planned.length > 0 ? `; planned ${names(planned)}` : ''}. ${empty ? 'Add food' : 'Open in Diary'}`}
+              >
+                <View style={styles.mealInfo}>
+                  <Text style={styles.mealName}>{label}</Text>
+                  {logged.length > 0 || planned.length === 0 ? (
+                    <Text style={styles.mealSub} numberOfLines={1}>
+                      {logged.length > 0
+                        ? names(logged)
+                        : usual[meal]
+                          ? `Usual: ${usual[meal]}`
+                          : 'Nothing logged yet'}
+                    </Text>
+                  ) : null}
+                  {planned.length > 0 ? (
+                    <Text style={styles.mealPlanned} numberOfLines={1}>
+                      Planned: {names(planned)}
+                    </Text>
+                  ) : null}
+                </View>
+              </Pressable>
               <View style={styles.mealRight}>
                 {kcal > 0 ? (
                   <Text style={styles.mealKcal}>

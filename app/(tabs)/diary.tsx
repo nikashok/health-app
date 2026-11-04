@@ -28,6 +28,7 @@ import {
   revertToPlanned,
 } from '@/db/logEntries';
 import { getProfile } from '@/db/profile';
+import { formatQty } from '@/db/quickLog';
 import { reconcile } from '@/db/sync';
 import type { LogEntry, MealType, UserProfile } from '@/types/db';
 import { BottomAction, Card, Chevron, Row, TintButton } from '@/ui/components';
@@ -288,43 +289,46 @@ function EntryRow({
   onConfirm: () => void;
 }) {
   const planned = entry.status === 'planned';
+  const name = displayFoodName(entry.food_name, entry.food_table);
+  // The row is a plain container: "open" and "Ate it" are sibling buttons, never one
+  // inside the other (nested buttons confuse screen readers and taps).
   return (
-    <Row
-      first={first}
-      onPress={onOpen}
-      style={planned ? styles.entryPlanned : undefined}
-      contentStyle={styles.entryContent}
-    >
-      <View style={styles.entryMain}>
-        <View style={styles.entryNameRow}>
-          <Text style={styles.entryName} numberOfLines={2}>
-            {displayFoodName(entry.food_name, entry.food_table)}
-          </Text>
-          {planned ? (
-            <Text style={styles.plannedPill} numberOfLines={1}>
-              Planned
+    <Row first={first} style={planned ? styles.entryPlanned : undefined} contentStyle={styles.entryContent}>
+      <Pressable
+        onPress={onOpen}
+        style={({ pressed }) => [styles.entryOpen, pressed && styles.entryOpenPressed]}
+        accessibilityRole="button"
+        accessibilityLabel={`${name}, ${portion(entry)}, ${int(entry.kcal)} kcal${planned ? ', planned' : ''}. Edit`}
+      >
+        <View style={styles.entryMain}>
+          <View style={styles.entryNameRow}>
+            <Text style={styles.entryName} numberOfLines={2}>
+              {name}
             </Text>
-          ) : null}
+            {planned ? (
+              <Text style={styles.plannedPill} numberOfLines={1}>
+                Planned
+              </Text>
+            ) : null}
+          </View>
+          <Text style={styles.entryPortion}>{portion(entry)}</Text>
         </View>
-        <Text style={styles.entryPortion}>{portion(entry)}</Text>
-      </View>
-      <View style={styles.entryRight}>
         <Text style={styles.entryKcal}>
           {int(entry.kcal)}
           <Text style={styles.entryKcalUnit}> kcal</Text>
         </Text>
-        {confirmable && planned ? (
-          <Pressable
-            style={styles.ateIt}
-            onPress={onConfirm}
-            hitSlop={8}
-            accessibilityRole="button"
-            accessibilityLabel={`Ate it: ${displayFoodName(entry.food_name, entry.food_table)}`}
-          >
-            <Text style={styles.ateItText}>Ate it</Text>
-          </Pressable>
-        ) : null}
-      </View>
+      </Pressable>
+      {confirmable && planned ? (
+        <Pressable
+          style={styles.ateIt}
+          onPress={onConfirm}
+          hitSlop={8}
+          accessibilityRole="button"
+          accessibilityLabel={`Ate it: ${name}`}
+        >
+          <Text style={styles.ateItText}>Ate it</Text>
+        </Pressable>
+      ) : null}
     </Row>
   );
 }
@@ -340,7 +344,7 @@ function dateLabel(date: string): string {
 function portion(e: LogEntry): string {
   return e.measure_name === 'grams'
     ? `${Math.round(e.grams_total)} g`
-    : `${e.quantity} × ${e.measure_name} · ${Math.round(e.grams_total)} g`;
+    : `${formatQty(e.quantity)} × ${e.measure_name} · ${Math.round(e.grams_total)} g`;
 }
 
 const styles = StyleSheet.create({
@@ -378,7 +382,9 @@ const styles = StyleSheet.create({
   confirmMeal: { ...type.footnote, color: colors.leaf, fontWeight: '600' },
   addText: { ...type.body, color: colors.leaf },
   entryPlanned: { backgroundColor: colors.plannedRow },
-  entryContent: { gap: 10 },
+  entryContent: { gap: 10, paddingVertical: 0 },
+  entryOpen: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 11 },
+  entryOpenPressed: { opacity: 0.6 },
   entryMain: { flex: 1, minWidth: 0, gap: 2 },
   entryNameRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   entryName: { flexShrink: 1, ...type.body, color: colors.ink },
@@ -394,7 +400,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   entryPortion: { ...type.footnote, color: colors.muted },
-  entryRight: { alignItems: 'flex-end', gap: 6 },
   entryKcal: { ...type.body, color: colors.ink, fontVariant: ['tabular-nums'] },
   entryKcalUnit: { ...type.footnote, color: colors.muted },
   ateIt: {

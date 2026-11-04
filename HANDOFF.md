@@ -1,7 +1,8 @@
 # Handoff — Nutrition Tracker
 
-Last verified: 2026-07-04. `npx tsc --noEmit` clean, `npm run verify:all` all green
-(M0–M7 + web data-path), working tree clean on `main`, up to date with `origin/main`.
+Last verified: 2026-11-04. `npx tsc --noEmit` clean, `npm test` (78 unit tests) and
+`npm run verify:all` all green (M0–M7 + web data-path + UX SQL), on branch
+`claude/keen-wright-odljvf` (the 2026-11 UI/UX pass, six commits).
 
 ## 1. What this is
 
@@ -54,20 +55,31 @@ Supabase is a **one-way background backup**:
 - Pull is **one-time**: `hydrateFromSupabase` restores a fresh install/reinstall, and
   migrates existing cloud rows into local on first upgrade. Supabase is never deleted
   from during migration — it stays an intact backup.
-- `useSyncStatus` (zustand store) drives the "☁ Backed up / ↑ Syncing…" chip on
-  Home/Diary, plus a manual "Back up now" reconcile action.
+- `useSyncStatus` (zustand store) drives the backup status on Today's header ("Backed up"
+  / "Offline · N to back up"); tapping it runs a manual "Back up now" reconcile.
+- `favorite_foods` is pushed like the rest, but its Supabase table comes from migration
+  0004 (applied by hand). Until then the drain skips favourites (`isMissingTable`,
+  `OPTIONAL_REMOTE` in sync.ts) instead of blocking the queue.
 - Auth (`src/ui/AuthScreen.tsx`) is sign-in only, no public sign-up — provisioning is
   manual (see memory: supabase-backend).
 
 ### App screens (`app/`)
-- `(tabs)/index.tsx` — Home: calorie ring, protein bar, week/month bar charts,
-  lifetime weight/waist sparklines, backup status, today's meals. This file is large
-  (~1500+ lines after the Vital Dark redesign) — the biggest single file in the repo.
-- `log.tsx` / `log-entry.tsx` / `edit-entry.tsx` — search + log/edit a food entry.
-- `diary.tsx` — full log history browser.
-- `custom-food.tsx` — create/edit/delete user-defined foods, with optional AI lookup.
+Bottom tabs (`app/(tabs)/`), each with its own large in-screen title (`ScreenTitle`):
+- `(tabs)/index.tsx` — **Today**: calories + macros (`DaySummaryCard`, with today's
+  plans as "+N planned · projected"), meals (a "+" per meal, plans with "Ate it",
+  "Usual: …" hints), trend weight + waist cards, targets-drift nudge, floating Log Food.
+- `(tabs)/diary.tsx` — **Diary**: any day (`?date=` links from charts/meals), the same
+  `DaySummaryCard`, meals with plans and confirms (all with Undo).
+- `(tabs)/progress.tsx` — **Progress**: weight trend chart (1M–All), 7/30-day calorie
+  bars (tap a bar to read it, "Open day"), protein averages, waist.
+Pushed above the tabs (logo button top right closes back to the tabs):
+- `log.tsx` — Add Food: meal picker, "Quick <meal>" (usual / repeat, Log all),
+  favourites and meal-aware recents with a one-tap "+", ranked search.
+- `log-entry.tsx` / `edit-entry.tsx` — shared `PortionPicker` + `NutritionPreview`;
+  Log Entry opens with the food's last portion and has a pinned Log button.
+- `custom-food.tsx` — per-100 g or per-serving entry (stored per 100 g), AI lookup.
 - `measurement.tsx` — daily weight/waist entry.
-- `onboarding.tsx` — first-run profile + target setup.
+- `onboarding.tsx` — profile + targets (also "Edit targets" and the drift nudge).
 
 ### AI nutrition lookup (`api/lookup.ts`, `src/db/nutritionLookup.ts`)
 Serverless function (Vercel) used from `custom-food.tsx` to look up nutrition facts
@@ -89,6 +101,13 @@ look is "True Black Vivid" (iOS-style: `#000` background, solid `#1c1c1e` cards 
 borders, blue `#0a84ff` for every action, orange `#ff6a1a` for calories, fixed macro
 colours `colors.protein/carbs/fat/fibre`, green `#30d158` for body metrics). If asked to
 touch visuals, check `theme.ts` first rather than hardcoding colors in screens.
+- Icons are SVG (`src/ui/icons.tsx`), not text glyphs. Meal names live in
+  `src/ui/meals.ts`; raw-ingredient names are shown via `displayFoodName` (drops the
+  Latin binomial — display only).
+- Feedback: `showToast(msg, { tone, action })` (Undo lives here); `showError` for failed
+  saves; `confirmDestructive/confirmProceed` use the in-app sheet on web.
+- Calorie bars: on target solid green, over solid red, under = outlined dim green (a
+  shape difference, not two greens).
 
 ## 4. Where this diverges from the original CLAUDE.md spec
 
@@ -106,9 +125,14 @@ tracking," or (b) update them — whichever the next owner prefers. Don't let th
 
 ## 5. Known rough edges / things to watch
 
-- `app/(tabs)/index.tsx` is doing too much (charts + sparklines + sync status + FAB +
-  meal list all in one file after the redesign commit). Next nontrivial Home change
-  is a good time to split it.
+- **Run migration 0004** (`supabase/migrations/0004_favorite_foods.sql`) in the Supabase
+  SQL editor; until then favourites stay on the device and show as "to back up".
+- **INDB data quality (not fixed — needs a sourced decision):** ~125 dishes have a
+  default serving over 800 kcal, and several fried items list 650–790 kcal/100 g (Poori
+  738, Vegetable cutlet 665), close to pure-fat density. Logging uses these numbers as
+  given; search rows now show "1 poori ≈ 933 kcal", which makes them visible.
+- iOS-specific behaviour (home-indicator inset under the tab bar, keyboard, standalone
+  web-app quirks) can't be checked headlessly here — Chromium only.
 - Supabase migrations (`supabase/migrations/0001..0003`) are applied manually — there's
   no migration runner wired into CI/deploy. `sync.ts` hydrate tolerates
   not-yet-applied migrations defensively (see its comment), but new schema changes
@@ -125,9 +149,9 @@ tracking," or (b) update them — whichever the next owner prefers. Don't let th
    logged-vs-planned) — those still hold regardless of the backend/weight additions.
 2. Read the relevant `build_docs/Mx_*.md` if touching a milestone's original feature
    area — they document intended behavior and acceptance criteria in detail.
-3. Run `npx tsc --noEmit` and `npm run verify:all` before considering a change done.
-   Both are fast (well under a minute total) and are the actual acceptance bar this
-   project has used at every milestone.
+3. Run `npx tsc --noEmit`, `npm test` and `npm run verify:all` before considering a
+   change done. All are fast (well under a minute total) and are the acceptance bar this
+   project has used at every milestone (`verify:ux` covers the 2026-11 UX SQL).
 
 ## 7. Useful pointers (see project memory for more)
 

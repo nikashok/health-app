@@ -1,10 +1,19 @@
 import { useState } from 'react';
-import { Image, KeyboardAvoidingView, Platform, StyleSheet, Text, TextInput, View } from 'react-native';
+import {
+  Image,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { supabase } from '@/db/supabase';
-import { Card, PrimaryButton, Row } from './components';
-import { colors, type } from './theme';
+import { PrimaryButton } from './components';
+import { colors, radius, type } from './theme';
 
 /**
  * Sign-in gate. Rendered by the root layout whenever there's no Supabase session; a
@@ -18,6 +27,7 @@ import { colors, type } from './theme';
 export function AuthScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -35,7 +45,7 @@ export function AuthScreen() {
       if (error) throw error;
       // Success → onAuthStateChange in the root layout takes over.
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(friendlyAuthError(e));
     } finally {
       setBusy(false);
     }
@@ -58,43 +68,58 @@ export function AuthScreen() {
             Sign in to your private diary. It’s stored on this device and backed up to your account.
           </Text>
 
-          <Card>
-            <Row first minHeight={50}>
-              <Text style={styles.label}>Email</Text>
-              <TextInput
-                style={styles.input}
-                value={email}
-                onChangeText={setEmail}
-                placeholder="you@example.com"
-                placeholderTextColor={colors.placeholder}
-                selectionColor={colors.leaf}
-                autoCapitalize="none"
-                autoCorrect={false}
-                keyboardType="email-address"
-                inputMode="email"
-                textContentType="emailAddress"
-                onSubmitEditing={onSubmit}
-              />
-            </Row>
-            <Row minHeight={50}>
-              <Text style={styles.label}>Password</Text>
-              <TextInput
-                style={styles.input}
-                value={password}
-                onChangeText={setPassword}
-                placeholder="Your password"
-                placeholderTextColor={colors.placeholder}
-                selectionColor={colors.leaf}
-                autoCapitalize="none"
-                autoCorrect={false}
-                secureTextEntry
-                textContentType="password"
-                onSubmitEditing={onSubmit}
-              />
-            </Row>
-          </Card>
+          <Text style={styles.label}>Email</Text>
+          <TextInput
+            style={styles.field}
+            value={email}
+            onChangeText={setEmail}
+            placeholder="you@example.com"
+            placeholderTextColor={colors.placeholder}
+            selectionColor={colors.leaf}
+            autoCapitalize="none"
+            autoCorrect={false}
+            keyboardType="email-address"
+            inputMode="email"
+            textContentType="emailAddress"
+            autoComplete="email"
+            returnKeyType="next"
+            accessibilityLabel="Email"
+          />
 
-          {error ? <Text style={styles.error}>{error}</Text> : null}
+          <Text style={[styles.label, styles.labelGap]}>Password</Text>
+          <View style={styles.passwordRow}>
+            <TextInput
+              style={[styles.field, styles.passwordField]}
+              value={password}
+              onChangeText={setPassword}
+              placeholder="Your password"
+              placeholderTextColor={colors.placeholder}
+              selectionColor={colors.leaf}
+              autoCapitalize="none"
+              autoCorrect={false}
+              secureTextEntry={!showPassword}
+              textContentType="password"
+              autoComplete="current-password"
+              returnKeyType="go"
+              onSubmitEditing={onSubmit}
+              accessibilityLabel="Password"
+            />
+            <Pressable
+              onPress={() => setShowPassword((s) => !s)}
+              style={styles.showBtn}
+              hitSlop={6}
+              accessibilityRole="button"
+              accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
+            >
+              <Text style={styles.showText}>{showPassword ? 'Hide' : 'Show'}</Text>
+            </Pressable>
+          </View>
+
+          {error ? (
+            <Text style={styles.error} accessibilityRole="alert">
+              {error}
+            </Text>
+          ) : null}
 
           <PrimaryButton
             title={busy ? 'Signing in…' : 'Sign In'}
@@ -107,6 +132,16 @@ export function AuthScreen() {
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
+}
+
+/** Supabase's messages are developer-facing; say what to do instead. */
+function friendlyAuthError(e: unknown): string {
+  const msg = e instanceof Error ? e.message : String(e);
+  if (/invalid login credentials/i.test(msg)) return 'That email and password don’t match. Check both and try again.';
+  if (/email not confirmed/i.test(msg)) return 'This account’s email hasn’t been confirmed yet.';
+  if (/failed to fetch|network|load failed/i.test(msg)) return 'Couldn’t reach the server. Check your connection and try again.';
+  if (/rate limit|too many/i.test(msg)) return 'Too many attempts — wait a minute and try again.';
+  return 'Sign-in didn’t work. Please try again.';
 }
 
 const styles = StyleSheet.create({
@@ -131,8 +166,20 @@ const styles = StyleSheet.create({
     marginHorizontal: 24,
     lineHeight: 20,
   },
-  label: { ...type.body, color: colors.ink, marginRight: 12, minWidth: 84 },
-  input: { ...type.body, color: colors.ink, flex: 1, textAlign: 'right', paddingVertical: 0 },
-  error: { ...type.footnote, color: colors.rose, marginTop: 10, marginHorizontal: 16 },
+  label: { ...type.footnote, fontWeight: '600', color: colors.muted, marginLeft: 4, marginBottom: 6 },
+  labelGap: { marginTop: 16 },
+  field: {
+    height: 50,
+    borderRadius: radius.md,
+    backgroundColor: colors.surface,
+    paddingHorizontal: 14,
+    fontSize: 17, // 16+ stops iOS Safari zooming on focus
+    color: colors.ink,
+  },
+  passwordRow: { flexDirection: 'row', alignItems: 'center' },
+  passwordField: { flex: 1, paddingRight: 64 },
+  showBtn: { position: 'absolute', right: 6, height: 38, paddingHorizontal: 10, justifyContent: 'center' },
+  showText: { ...type.subhead, fontWeight: '600', color: colors.leaf },
+  error: { ...type.footnote, color: colors.rose, marginTop: 12, marginHorizontal: 4, lineHeight: 18 },
   submit: { marginTop: 24 },
 });

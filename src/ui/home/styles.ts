@@ -117,7 +117,9 @@ export const styles = StyleSheet.create({
   legendText: { ...type.caption, color: colors.muted },
 
   // ── Meals ──
-  mealRow: { gap: 10, paddingRight: 10 },
+  mealRow: { gap: 10, paddingRight: 10, paddingVertical: 0 },
+  mealOpen: { flex: 1, minWidth: 0, paddingVertical: 11 },
+  mealOpenPressed: { opacity: 0.6 },
   mealInfo: { flex: 1, minWidth: 0, gap: 1 },
   mealName: { ...type.body, color: colors.ink },
   mealSub: { ...type.footnote, color: colors.muted },
