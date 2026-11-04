@@ -12,6 +12,7 @@ import {
   type ViewStyle,
 } from 'react-native';
 
+import { Icon } from './icons';
 import { colors, radius, type } from './theme';
 import { useKeyboardVisible } from './useKeyboardVisible';
 
@@ -49,8 +50,12 @@ export function GroupFooter({ children }: { children: React.ReactNode }) {
 }
 
 /** The grey disclosure chevron at the trailing edge of a tappable row. */
-export function Chevron({ style }: { style?: StyleProp<TextStyle> }) {
-  return <Text style={[styles.chevron, style]}>›</Text>;
+export function Chevron({ style }: { style?: StyleProp<ViewStyle> }) {
+  return (
+    <View style={[styles.chevron, style]} importantForAccessibility="no-hide-descendants">
+      <Icon name="chevron-right" size={14} color={colors.chevron} strokeWidth={2.6} />
+    </View>
+  );
 }
 
 /**
@@ -265,7 +270,7 @@ export function BottomAction({
           pressed && { opacity: 0.85, transform: [{ scale: 0.97 }] },
         ]}
       >
-        <Text style={[styles.bottomPlus, !primary && styles.bottomTextSecondary]}>+</Text>
+        <Icon name="plus" size={20} strokeWidth={2.4} color={primary ? '#ffffff' : colors.leaf} />
         <Text style={[styles.bottomText, !primary && styles.bottomTextSecondary]}>{title}</Text>
       </Pressable>
     </View>
@@ -383,7 +388,7 @@ export function Stepper({
           accessibilityRole="button"
           accessibilityLabel="Decrease quantity"
         >
-          <Text style={styles.stepperSign}>−</Text>
+          <Icon name="minus" size={18} color={colors.ink} />
         </Pressable>
         <View style={styles.stepperSep} />
         <Pressable
@@ -393,7 +398,7 @@ export function Stepper({
           accessibilityRole="button"
           accessibilityLabel="Increase quantity"
         >
-          <Text style={styles.stepperSign}>+</Text>
+          <Icon name="plus" size={18} color={colors.ink} />
         </Pressable>
       </View>
     </View>
@@ -463,7 +468,7 @@ const styles = StyleSheet.create({
     marginHorizontal: 16,
     lineHeight: 18,
   },
-  chevron: { color: colors.chevron, fontSize: 19, fontWeight: '600', marginLeft: 8 },
+  chevron: { marginLeft: 8, justifyContent: 'center' },
   cardHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   cardHeaderLabel: { ...type.subhead, fontWeight: '600' },
   cardHeaderRight: { flexDirection: 'row', alignItems: 'center', gap: 6 },
@@ -529,7 +534,6 @@ const styles = StyleSheet.create({
     elevation: 8,
   },
   bottomSecondary: { backgroundColor: colors.surface, paddingHorizontal: 26 },
-  bottomPlus: { fontSize: 22, fontWeight: '500', lineHeight: 24, color: '#ffffff' },
   bottomText: { ...type.headline, color: '#ffffff' },
   bottomTextSecondary: { color: colors.leaf },
   segmented: {
@@ -578,7 +582,6 @@ const styles = StyleSheet.create({
   },
   stepperBtn: { width: 46, height: 32, alignItems: 'center', justifyContent: 'center' },
   stepperBtnOn: { backgroundColor: colors.lineStrong },
-  stepperSign: { fontSize: 22, color: colors.ink, lineHeight: 26 },
   stepperSep: { width: 0.5, height: 18, backgroundColor: colors.lineStrong },
   fieldLabel: { ...type.body, color: colors.ink },
   fieldValue: { flexDirection: 'row', alignItems: 'center', gap: 6 },

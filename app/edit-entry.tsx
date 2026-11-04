@@ -24,17 +24,14 @@ import {
   Stepper,
   TintButton,
 } from '@/ui/components';
+import { DatePickerModal } from '@/ui/DatePickerModal';
 import { int } from '@/ui/format';
+import { Icon } from '@/ui/icons';
+import { MEAL_OPTS } from '@/ui/meals';
 import { showError, showToast } from '@/ui/toast';
 import { isGrams, qtyForSwitch, qtyStep } from '@/ui/quantity';
 import { colors, heroNumber, type } from '@/ui/theme';
 
-const MEAL_OPTS: { value: MealType; label: string }[] = [
-  { value: 'breakfast', label: 'B’fast' },
-  { value: 'lunch', label: 'Lunch' },
-  { value: 'snack', label: 'Snack' },
-  { value: 'dinner', label: 'Dinner' },
-];
 const TODAY = () => dayjs().format('YYYY-MM-DD');
 
 /**
@@ -55,6 +52,7 @@ export default function EditEntryScreen() {
   const [meal, setMeal] = useState<MealType>('breakfast');
   const [date, setDate] = useState(TODAY());
   const [busy, setBusy] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -171,6 +169,12 @@ export default function EditEntryScreen() {
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.content} {...formScrollProps}>
+      <DatePickerModal
+        visible={pickerOpen}
+        value={date}
+        onSelect={setDate}
+        onClose={() => setPickerOpen(false)}
+      />
       <Text style={styles.name}>{entry.food_name}</Text>
 
       <GroupHeader>Meal</GroupHeader>
@@ -180,12 +184,31 @@ export default function EditEntryScreen() {
       <Card>
         <FieldRow label="Date" first minHeight={50}>
           <View style={styles.dateRow}>
-            <Pressable onPress={() => shiftDay(-1)} style={styles.navBtn} hitSlop={8} accessibilityLabel="Previous day">
-              <Text style={styles.navText}>‹</Text>
+            <Pressable
+              onPress={() => shiftDay(-1)}
+              style={styles.navBtn}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel="Previous day"
+            >
+              <Icon name="chevron-left" size={20} color={colors.leaf} strokeWidth={2.4} />
             </Pressable>
-            <Text style={styles.dateText}>{dayjs(date).format('ddd, D MMM')}</Text>
-            <Pressable onPress={() => shiftDay(1)} style={styles.navBtn} hitSlop={8} accessibilityLabel="Next day">
-              <Text style={styles.navText}>›</Text>
+            <Pressable
+              onPress={() => setPickerOpen(true)}
+              hitSlop={6}
+              accessibilityRole="button"
+              accessibilityLabel={`${dayjs(date).format('dddd D MMMM')}. Choose a date`}
+            >
+              <Text style={styles.dateText}>{dayjs(date).format('ddd, D MMM')}</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => shiftDay(1)}
+              style={styles.navBtn}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel="Next day"
+            >
+              <Icon name="chevron-right" size={20} color={colors.leaf} strokeWidth={2.4} />
             </Pressable>
           </View>
         </FieldRow>
@@ -281,9 +304,8 @@ const styles = StyleSheet.create({
   name: { ...type.title1, color: colors.ink, paddingHorizontal: 4 },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   dateRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginRight: -6 },
-  navBtn: { width: 32, alignItems: 'center' },
-  navText: { fontSize: 26, lineHeight: 30, color: colors.leaf },
-  dateText: { ...type.body, color: colors.ink, minWidth: 110, textAlign: 'center' },
+  navBtn: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center' },
+  dateText: { ...type.body, color: colors.leaf, minWidth: 110, textAlign: 'center' },
   planNote: { ...type.footnote, color: colors.saffron, marginTop: 7, marginLeft: 16 },
   preview: {
     marginTop: 24,

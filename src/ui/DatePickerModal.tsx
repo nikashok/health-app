@@ -6,6 +6,7 @@ import dayjs from 'dayjs';
 import { useEffect, useState } from 'react';
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { Icon } from './icons';
 import { colors, type } from './theme';
 
 const WEEKDAYS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
@@ -51,7 +52,7 @@ export function DatePickerModal({
               accessibilityRole="button"
               accessibilityLabel="Previous month"
             >
-              <Text style={styles.nav}>‹</Text>
+              <Icon name="chevron-left" size={22} color={colors.leaf} strokeWidth={2.4} />
             </Pressable>
             <Text style={styles.month}>{month.format('MMMM YYYY')}</Text>
             <Pressable
@@ -60,7 +61,7 @@ export function DatePickerModal({
               accessibilityRole="button"
               accessibilityLabel="Next month"
             >
-              <Text style={styles.nav}>›</Text>
+              <Icon name="chevron-right" size={22} color={colors.leaf} strokeWidth={2.4} />
             </Pressable>
           </View>
 
@@ -135,7 +136,6 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     paddingHorizontal: 6,
   },
-  nav: { fontSize: 28, lineHeight: 32, color: colors.leaf, paddingHorizontal: 6 },
   month: { ...type.headline, color: colors.ink },
   row: { flexDirection: 'row' },
   weekday: { flex: 1, textAlign: 'center', ...type.footnote, color: colors.muted, paddingVertical: 6 },

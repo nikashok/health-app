@@ -1,69 +1,62 @@
 import dayjs from 'dayjs';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { ActivityIndicator, RefreshControl, ScrollView, Text, View } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { consumedTotals } from '@/calc/dayTotals';
-import { addDays, buildRangeInsights, streakFrom } from '@/calc/insights';
-import { getDailyKcal, getLoggedDates } from '@/db/insights';
-import { getEntriesForDate } from '@/db/logEntries';
+import { consumedTotals, plannedTotals } from '@/calc/dayTotals';
+import { streakFrom } from '@/calc/insights';
+import { getLoggedDates } from '@/db/insights';
+import { confirmMeal, getEntriesForDate } from '@/db/logEntries';
 import { getAllMeasurements } from '@/db/measurements';
 import { getProfile } from '@/db/profile';
-import { supabase } from '@/db/supabase';
-import { reconcile, useSyncStatus } from '@/db/sync';
-import { confirmDestructive } from '@/lib/confirm';
+import { reconcile } from '@/db/sync';
+import type { MealType } from '@/types/db';
 import { BottomAction } from '@/ui/components';
+import { DaySummaryCard } from '@/ui/DaySummaryCard';
 import { BodyTrends } from '@/ui/home/BodyTrends';
-import { CaloriesCard } from '@/ui/home/CaloriesCard';
-import { HomeHeader } from '@/ui/home/HomeHeader';
-import { inferMeal, type HomeState } from '@/ui/home/homeUtils';
-import { MonthCard, WeekCard } from '@/ui/home/IntakeBars';
-import { QuickActions } from '@/ui/home/QuickActions';
+import type { HomeState } from '@/ui/home/homeUtils';
 import { styles } from '@/ui/home/styles';
 import { TodayMeals } from '@/ui/home/TodayMeals';
+import { inferMeal, MEAL_LABELS } from '@/ui/meals';
+import { ScreenTitle } from '@/ui/ScreenTitle';
+import { SyncStatus } from '@/ui/SyncStatus';
 import { colors } from '@/ui/theme';
+import { showError, showToast } from '@/ui/toast';
 
-/** Load everything Home shows. Returns null when there is no profile yet (first run). */
-async function loadHome(): Promise<HomeState | null> {
+/** Load everything Today shows. Returns null when there is no profile yet (first run). */
+async function loadToday(): Promise<HomeState | null> {
   const profile = await getProfile();
   if (profile === null) return null;
   const todayISO = dayjs().format('YYYY-MM-DD');
-  const target = profile.target_kcal ?? null;
-  const [todayEntries, monthMap, allMeasurements, loggedDates] = await Promise.all([
+  const [todayEntries, allMeasurements, loggedDates] = await Promise.all([
     getEntriesForDate(todayISO),
-    getDailyKcal(addDays(todayISO, -29), todayISO),
     getAllMeasurements(),
     getLoggedDates(todayISO),
   ]);
   return {
     profile,
     today: todayEntries,
-    week: buildRangeInsights(monthMap, todayISO, 7, target),
-    monthMap,
     allMeasurements,
     streak: streakFrom(loggedDates, todayISO),
   };
 }
 
-export default function HomeScreen() {
+export default function TodayScreen() {
   const router = useRouter();
-  const insets = useSafeAreaInsets();
   const [state, setState] = useState<HomeState | null>(null);
-  const [initial, setInitial] = useState('');
   const [refreshing, setRefreshing] = useState(false);
-  const { pending, syncing } = useSyncStatus();
 
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      setInitial((data.session?.user?.email ?? '').charAt(0).toUpperCase());
-    });
-  }, []);
+  const reload = useCallback(async () => {
+    const s = await loadToday();
+    if (s === null) router.replace('/onboarding');
+    else setState(s);
+  }, [router]);
 
   useFocusEffect(
     useCallback(() => {
       let active = true;
-      loadHome().then((s) => {
+      loadToday().then((s) => {
         if (!active) return;
         if (s === null) router.replace('/onboarding');
         else setState(s);
@@ -74,17 +67,16 @@ export default function HomeScreen() {
     }, [router])
   );
 
-  // Pull to refresh: back up anything pending, then reload the day.
+  // Pull to refresh (native): back up anything pending, then reload the day.
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
       await reconcile().catch(() => {});
-      const s = await loadHome();
-      if (s) setState(s);
+      await reload();
     } finally {
       setRefreshing(false);
     }
-  }, []);
+  }, [reload]);
 
   if (!state) {
     return (
@@ -95,62 +87,66 @@ export default function HomeScreen() {
     );
   }
 
-  const { profile, today, week, monthMap, allMeasurements, streak } = state;
-  const target = profile.target_kcal ?? null;
+  const { profile, today, allMeasurements, streak } = state;
   const todayISO = dayjs().format('YYYY-MM-DD');
   const consumed = consumedTotals(today);
-  const month = buildRangeInsights(monthMap, todayISO, 30, target);
-  const syncLabel = syncing ? 'Backing up…' : pending > 0 ? `${pending} to back up` : 'Backed up';
+  const planned = plannedTotals(today);
 
   const logFood = () =>
     router.push({ pathname: '/log', params: { meal: inferMeal(), date: todayISO, origin: 'home' } });
-  const logWeight = () => router.push('/measurement');
-  const editTargets = () => router.push('/onboarding');
-  const openDay = (date: string) => router.push({ pathname: '/diary', params: { date } });
-  const signOut = () =>
-    confirmDestructive(
-      'Sign out?',
-      'You will need your email and password to sign back in.',
-      'Sign Out',
-      () => supabase.auth.signOut()
-    );
+  const confirmPlanned = (meal: MealType) =>
+    confirmMeal(todayISO, meal)
+      .then(() => {
+        showToast(`${MEAL_LABELS[meal]} marked as eaten`);
+        return reload();
+      })
+      .catch((e) => showError(e));
 
   return (
     <View style={styles.root}>
       <SafeAreaView style={styles.flex} edges={['top']}>
         <ScrollView
-          contentContainerStyle={[styles.content, { paddingBottom: 130 + insets.bottom }]}
+          contentContainerStyle={[styles.content, { paddingBottom: 140 }]}
           showsVerticalScrollIndicator={false}
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.muted} />
           }
         >
-          <HomeHeader
-            initial={initial || '•'}
-            streak={streak}
-            syncLabel={syncLabel}
-            onSyncPress={onRefresh}
-            hasTarget={target != null}
-            topInset={insets.top}
-            onEditTargets={editTargets}
-            onSignOut={signOut}
+          <ScreenTitle
+            eyebrow={dayjs().format('dddd, D MMMM')}
+            title="Today"
+            meta={
+              <>
+                <Text style={styles.metaText}>
+                  {streak > 0 ? `${streak}-day streak` : 'Log today to start a streak'}
+                </Text>
+                <Text style={styles.metaSep}>·</Text>
+                <SyncStatus inline />
+              </>
+            }
           />
-          <CaloriesCard consumed={consumed} profile={profile} onGoalPress={editTargets} />
-          <BodyTrends allMeasurements={allMeasurements} todayISO={todayISO} onPress={logWeight} />
-          <QuickActions onLogWeight={logWeight} />
-
-          {/* TODO: add "Show All" here once an insights screen exists (app/insights.tsx). */}
+          <DaySummaryCard
+            style={styles.caloriesCard}
+            totals={consumed}
+            profile={profile}
+            pendingPlan={
+              planned.kcal > 0 ? { kcal: planned.kcal, projected: consumed.kcal + planned.kcal } : null
+            }
+            onGoalPress={() => router.push('/onboarding')}
+          />
+          <TodayMeals today={today} todayISO={todayISO} router={router} onConfirmMeal={confirmPlanned} />
           <View style={styles.sectionHead}>
-            <Text style={styles.sectionTitle}>Trends</Text>
+            <Text style={styles.sectionTitle}>Body</Text>
           </View>
-          <WeekCard week={week} target={target} onDayPress={openDay} />
-          <MonthCard month={month} target={target} onDayPress={openDay} />
-
-          <TodayMeals today={today} todayISO={todayISO} router={router} />
+          <BodyTrends
+            allMeasurements={allMeasurements}
+            todayISO={todayISO}
+            onPress={() => router.push('/measurement')}
+          />
         </ScrollView>
       </SafeAreaView>
 
-      <BottomAction title="Log Food" onPress={logFood} insetBottom={insets.bottom} />
+      <BottomAction title="Log Food" onPress={logFood} />
     </View>
   );
 }

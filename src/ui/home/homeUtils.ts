@@ -2,49 +2,22 @@
 import dayjs from 'dayjs';
 import type { useRouter } from 'expo-router';
 
-import { addDays, type RangeInsights } from '@/calc/insights';
-import type { BodyMeasurement, LogEntry, MealType, UserProfile } from '@/types/db';
+import { addDays } from '@/calc/insights';
+import type { BodyMeasurement, LogEntry, UserProfile } from '@/types/db';
 
 /** The expo-router navigator, passed to Home sub-components that navigate. */
 export type HomeRouter = ReturnType<typeof useRouter>;
-
-// ─── Constants ──────────────────────────────────────────────────────────────
-
-export const RING_SIZE = 104;
-export const RING_STROKE = 15;
-export const RING_R = 44;
-export const RING_C = 2 * Math.PI * RING_R; // 276.46
-
-/** Fibre has no profile target; 30 g is the general adult guideline. */
-export const FIBRE_TARGET_G = 30;
-
-export const MEAL_LABELS: Record<MealType, string> = {
-  breakfast: 'Breakfast',
-  lunch: 'Lunch',
-  snack: 'Snack',
-  dinner: 'Dinner',
-};
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 export interface HomeState {
   profile: UserProfile;
   today: LogEntry[];
-  week: RangeInsights;
-  monthMap: Record<string, number>;
   allMeasurements: BodyMeasurement[];
   streak: number;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
-
-export function inferMeal(): MealType {
-  const h = dayjs().hour();
-  if (h < 11) return 'breakfast';
-  if (h < 16) return 'lunch';
-  if (h < 19) return 'snack';
-  return 'dinner';
-}
 
 export function getDayInitial(isoDate: string): string {
   const day = new Date(`${isoDate}T00:00:00Z`).getUTCDay();

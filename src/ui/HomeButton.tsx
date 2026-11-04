@@ -1,7 +1,7 @@
 /**
- * The app logo in the nav bar: one tap returns to Home from any depth. It closes every
- * screen above Home; when there is nothing underneath (a screen opened directly by URL
- * on web), it loads Home instead.
+ * The app logo in the nav bar of every screen pushed above the tabs: one tap closes them
+ * all and returns to the tab you came from. When there is nothing underneath (a screen
+ * opened directly by URL on web), it loads Today instead.
  */
 import { useRouter } from 'expo-router';
 import { Image, Platform, Pressable, StyleSheet } from 'react-native';
@@ -22,7 +22,7 @@ export function HomeButton() {
       onPress={goHome}
       hitSlop={8}
       accessibilityRole="button"
-      accessibilityLabel="Home"
+      accessibilityLabel="Close"
       style={({ pressed }) => [styles.wrap, pressed && styles.pressed]}
     >
       <Image source={require('../../assets/images/icon.png')} style={styles.logo} />

@@ -18,14 +18,9 @@ import { tableToKind, type FoodKind } from '@/db/searchSql';
 import type { MealType } from '@/types/db';
 import { BottomAction, Card, Chevron, GroupFooter, GroupHeader, PrimaryButton } from '@/ui/components';
 import { numberText } from '@/ui/format';
+import { MEAL_LABELS } from '@/ui/meals';
 import { colors, radius, type } from '@/ui/theme';
 
-const MEAL_LABELS: Record<MealType, string> = {
-  breakfast: 'Breakfast',
-  lunch: 'Lunch',
-  snack: 'Snack',
-  dinner: 'Dinner',
-};
 
 export default function LogScreen() {
   const router = useRouter();

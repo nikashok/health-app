@@ -10,13 +10,18 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, View, type StyleProp, t
 import { reconcile, useSyncStatus } from '@/db/sync';
 import { colors, type } from '@/ui/theme';
 
-/** `compact` shows just the status dot (narrow screens); the label stays for screen readers. */
+/**
+ * `compact` shows just the status dot (narrow screens); the label stays for screen readers.
+ * `inline` drops the pill background so it can sit in a line of meta text (Today's header).
+ */
 export function SyncStatus({
   style,
   compact,
+  inline,
 }: {
   style?: StyleProp<ViewStyle>;
   compact?: boolean;
+  inline?: boolean;
 }) {
   const { pending, syncing, lastError } = useSyncStatus();
   const [busy, setBusy] = useState(false);
@@ -51,7 +56,7 @@ export function SyncStatus({
       onPress={onPress}
       disabled={active}
       hitSlop={6}
-      style={[styles.wrap, style]}
+      style={[styles.wrap, inline && styles.inline, style]}
       accessibilityRole="button"
       accessibilityLabel={pending > 0 ? `${label}. Back up now` : label}
     >
@@ -60,7 +65,11 @@ export function SyncStatus({
       ) : (
         <View style={[styles.dot, { backgroundColor: tone }]} />
       )}
-      {compact ? null : <Text style={[styles.text, { color: tone }]}>{label}</Text>}
+      {compact ? null : (
+        <Text style={[styles.text, inline && styles.inlineText, { color: inline && tone === colors.good ? colors.muted : tone }]}>
+          {label}
+        </Text>
+      )}
     </Pressable>
   );
 }
@@ -76,6 +85,8 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     alignSelf: 'flex-start',
   },
+  inline: { backgroundColor: 'transparent', paddingHorizontal: 0, height: undefined, minHeight: 24 },
+  inlineText: { ...type.subhead, fontWeight: '400' },
   dot: { width: 7, height: 7, borderRadius: 4 },
   text: { ...type.caption, fontWeight: '600' },
 });

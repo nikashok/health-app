@@ -24,16 +24,11 @@ import {
   text,
 } from '@/ui/components';
 import { int, numberText } from '@/ui/format';
+import { MEAL_OPTS } from '@/ui/meals';
 import { showError, showToast } from '@/ui/toast';
 import { initialQty, isGrams, pickerMeasures, qtyForSwitch, qtyStep } from '@/ui/quantity';
 import { colors, heroNumber, type } from '@/ui/theme';
 
-const MEAL_OPTS: { value: MealType; label: string }[] = [
-  { value: 'breakfast', label: 'Breakfast' },
-  { value: 'lunch', label: 'Lunch' },
-  { value: 'snack', label: 'Snack' },
-  { value: 'dinner', label: 'Dinner' },
-];
 
 export default function LogEntryScreen() {
   const router = useRouter();

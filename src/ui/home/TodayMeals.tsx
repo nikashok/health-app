@@ -1,63 +1,93 @@
 import { Pressable, Text, View } from 'react-native';
 
 import { MEAL_ORDER, mealConsumedKcal } from '@/calc/dayTotals';
-import type { LogEntry } from '@/types/db';
-import { Card, Chevron, Row } from '@/ui/components';
+import type { LogEntry, MealType } from '@/types/db';
+import { Card, Row } from '@/ui/components';
 import { int } from '@/ui/format';
+import { Icon } from '@/ui/icons';
+import { MEAL_LABELS } from '@/ui/meals';
+import { colors } from '@/ui/theme';
 
-import { MEAL_LABELS, type HomeRouter } from './homeUtils';
+import type { HomeRouter } from './homeUtils';
 import { styles } from './styles';
 
-/** Per-meal summary rows for today, with a link through to the diary. */
+const names = (entries: LogEntry[]) => entries.map((e) => e.food_name).join(' · ');
+
+/**
+ * Today's meals. Each row shows what was eaten (kcal counts logged food only), any plans
+ * for that meal with an "Ate it" to confirm them, and a "+" that goes straight to Add
+ * Food for that meal. Tapping a meal with food opens today in the Diary.
+ */
 export function TodayMeals({
   today,
   todayISO,
   router,
+  onConfirmMeal,
 }: {
   today: LogEntry[];
   todayISO: string;
   router: HomeRouter;
+  onConfirmMeal: (meal: MealType) => void;
 }) {
   return (
     <View>
       <View style={styles.sectionHead}>
         <Text style={styles.sectionTitle}>Meals</Text>
-        <Pressable onPress={() => router.push('/diary')} hitSlop={8}>
-          <Text style={styles.sectionLink}>Diary</Text>
-        </Pressable>
       </View>
       <Card>
         {MEAL_ORDER.map((meal, i) => {
-          const items = today.filter((e) => e.meal_type === meal && e.status === 'logged');
+          const logged = today.filter((e) => e.meal_type === meal && e.status === 'logged');
+          const planned = today.filter((e) => e.meal_type === meal && e.status === 'planned');
           const kcal = mealConsumedKcal(today, meal);
-          const empty = items.length === 0;
+          const empty = logged.length === 0 && planned.length === 0;
+          const label = MEAL_LABELS[meal];
+          const add = () =>
+            router.push({ pathname: '/log', params: { meal, date: todayISO, origin: 'home' } });
+          const open = () =>
+            router.push({ pathname: '/diary', params: { date: todayISO, at: String(Date.now()) } });
           return (
-            <Row
-              key={meal}
-              first={i === 0}
-              // A meal with food opens today's diary to see/edit it; an empty one goes to Add Food.
-              onPress={() =>
-                empty
-                  ? router.push({ pathname: '/log', params: { meal, date: todayISO, origin: 'home' } })
-                  : router.push({ pathname: '/diary', params: { date: todayISO } })
-              }
-              contentStyle={styles.mealRow}
-            >
+            <Row key={meal} first={i === 0} onPress={empty ? add : open} contentStyle={styles.mealRow}>
               <View style={styles.mealInfo}>
-                <Text style={styles.mealName}>{MEAL_LABELS[meal]}</Text>
-                <Text style={styles.mealSub} numberOfLines={1}>
-                  {empty ? 'Nothing logged yet' : items.map((e) => e.food_name).join(' · ')}
-                </Text>
+                <Text style={styles.mealName}>{label}</Text>
+                {logged.length > 0 || planned.length === 0 ? (
+                  <Text style={styles.mealSub} numberOfLines={1}>
+                    {logged.length > 0 ? names(logged) : 'Nothing logged yet'}
+                  </Text>
+                ) : null}
+                {planned.length > 0 ? (
+                  <Text style={styles.mealPlanned} numberOfLines={1}>
+                    Planned: {names(planned)}
+                  </Text>
+                ) : null}
               </View>
-              {empty ? (
-                <Text style={styles.mealAdd}>Add</Text>
-              ) : (
-                <Text style={styles.mealKcal}>
-                  {int(kcal)}
-                  <Text style={styles.mealKcalUnit}> kcal</Text>
-                </Text>
-              )}
-              <Chevron />
+              <View style={styles.mealRight}>
+                {kcal > 0 ? (
+                  <Text style={styles.mealKcal}>
+                    {int(kcal)}
+                    <Text style={styles.mealKcalUnit}> kcal</Text>
+                  </Text>
+                ) : null}
+                {planned.length > 0 ? (
+                  <Pressable
+                    onPress={() => onConfirmMeal(meal)}
+                    style={styles.mealAteIt}
+                    hitSlop={8}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Ate it: planned ${label.toLowerCase()}`}
+                  >
+                    <Text style={styles.mealAteItText}>Ate it</Text>
+                  </Pressable>
+                ) : null}
+              </View>
+              <Pressable
+                onPress={add}
+                style={({ pressed }) => [styles.mealAdd, pressed && styles.mealAddPressed]}
+                hitSlop={4}
+                accessibilityRole="button"
+                accessibilityLabel={`Add food to ${label.toLowerCase()}`}
+              >
+                <Icon name="plus" size={18} color={colors.leaf} strokeWidth={2.4} />
+              </Pressable>
             </Row>
           );
         })}

@@ -1,14 +1,13 @@
 import type { Session } from '@supabase/supabase-js';
 import { Stack } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, AppState, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { ActivityIndicator, AppState, StyleSheet, Text, View } from 'react-native';
 
 import { initDatabase } from '@/db/database';
 import { supabase } from '@/db/supabase';
 import { bootstrapSync, drainOutbox } from '@/db/sync';
 import { AuthScreen } from '@/ui/AuthScreen';
 import { HomeButton } from '@/ui/HomeButton';
-import { SyncStatus } from '@/ui/SyncStatus';
 import { colors, type } from '@/ui/theme';
 import { Toast } from '@/ui/toast';
 
@@ -108,21 +107,13 @@ export default function RootLayout() {
           headerBackButtonDisplayMode: 'default',
           contentStyle: { backgroundColor: colors.bg },
           headerBlurEffect: 'dark',
-          // The app logo, top right: one tap back to Home from anywhere.
+          // The app logo, top right: one tap closes everything above the tabs.
           headerRight: () => <HomeButton />,
         }}
       >
-        {/* Home draws its own large title; its title is the back label ("‹ Today") elsewhere. */}
-        <Stack.Screen name="(tabs)" options={{ headerShown: false, title: 'Today' }} />
+        {/* The tabs draw their own large titles; "Back" is the label on screens above them. */}
+        <Stack.Screen name="(tabs)" options={{ headerShown: false, title: 'Back' }} />
         <Stack.Screen name="onboarding" options={{ title: 'Targets', headerLargeTitle: true }} />
-        <Stack.Screen
-          name="diary"
-          options={{
-            title: 'Diary',
-            headerLargeTitle: true,
-            headerRight: () => <DiaryHeaderRight />,
-          }}
-        />
         <Stack.Screen name="log" options={{ title: 'Add Food' }} />
         <Stack.Screen name="log-entry" options={{ title: '' }} />
         <Stack.Screen name="edit-entry" options={{ title: 'Edit Entry' }} />
@@ -134,16 +125,6 @@ export default function RootLayout() {
   );
 }
 
-/** Diary's nav items. On narrow phones the backup pill shrinks to its dot so it can't cover the title. */
-function DiaryHeaderRight() {
-  const { width } = useWindowDimensions();
-  return (
-    <View style={styles.headerRight}>
-      <SyncStatus compact={width < 375} />
-      <HomeButton />
-    </View>
-  );
-}
 
 const styles = StyleSheet.create({
   center: {
@@ -156,5 +137,4 @@ const styles = StyleSheet.create({
   loading: { ...type.subhead, marginTop: 12, color: colors.muted },
   errorTitle: { ...type.headline, color: colors.ink, marginBottom: 8 },
   errorBody: { ...type.subhead, color: colors.rose, textAlign: 'center' },
-  headerRight: { flexDirection: 'row', alignItems: 'center', gap: 12 },
 });
