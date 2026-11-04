@@ -25,6 +25,7 @@ import {
   confirmEntry,
   confirmMeal,
   getEntriesForDate,
+  revertToPlanned,
 } from '@/db/logEntries';
 import { getProfile } from '@/db/profile';
 import { reconcile } from '@/db/sync';
@@ -32,6 +33,7 @@ import type { LogEntry, MealType, UserProfile } from '@/types/db';
 import { BottomAction, Card, Chevron, Row, TintButton } from '@/ui/components';
 import { DatePickerModal } from '@/ui/DatePickerModal';
 import { DaySummaryCard } from '@/ui/DaySummaryCard';
+import { displayFoodName } from '@/ui/foodName';
 import { int } from '@/ui/format';
 import { Icon } from '@/ui/icons';
 import { inferMeal, MEAL_LABELS } from '@/ui/meals';
@@ -80,11 +82,19 @@ export default function DiaryScreen() {
     }, [date])
   );
 
-  /** Confirm plans as eaten, then reload; a failure is reported instead of lost. */
-  const confirm = (run: () => Promise<unknown>, done: string) =>
+  /** Confirm plans as eaten, then reload; Undo puts them back; failures are reported. */
+  const confirm = (run: () => Promise<number[]>, done: string) =>
     run()
-      .then(() => {
-        showToast(done);
+      .then((ids) => {
+        showToast(done, {
+          action: {
+            label: 'Undo',
+            onPress: () =>
+              revertToPlanned(ids)
+                .then(load)
+                .catch((e) => showError(e)),
+          },
+        });
         return load();
       })
       .catch((e) => showError(e));
@@ -235,7 +245,12 @@ export default function DiaryScreen() {
                       first={i === 0}
                       confirmable={confirmable}
                       onOpen={() => router.push({ pathname: '/edit-entry', params: { id: String(entry.id) } })}
-                      onConfirm={() => confirm(() => confirmEntry(entry.id), `${entry.food_name} marked as eaten`)}
+                      onConfirm={() =>
+                      confirm(
+                        () => confirmEntry(entry.id),
+                        `${displayFoodName(entry.food_name, entry.food_table)} marked as eaten`
+                      )
+                    }
                     />
                   ))}
                   <Row
@@ -282,7 +297,9 @@ function EntryRow({
     >
       <View style={styles.entryMain}>
         <View style={styles.entryNameRow}>
-          <Text style={styles.entryName} numberOfLines={2}>{entry.food_name}</Text>
+          <Text style={styles.entryName} numberOfLines={2}>
+            {displayFoodName(entry.food_name, entry.food_table)}
+          </Text>
           {planned ? (
             <Text style={styles.plannedPill} numberOfLines={1}>
               Planned
@@ -302,7 +319,7 @@ function EntryRow({
             onPress={onConfirm}
             hitSlop={8}
             accessibilityRole="button"
-            accessibilityLabel={`Ate it: ${entry.food_name}`}
+            accessibilityLabel={`Ate it: ${displayFoodName(entry.food_name, entry.food_table)}`}
           >
             <Text style={styles.ateItText}>Ate it</Text>
           </Pressable>

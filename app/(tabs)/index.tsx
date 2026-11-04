@@ -7,7 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { consumedTotals, plannedTotals } from '@/calc/dayTotals';
 import { streakFrom } from '@/calc/insights';
 import { getLoggedDates } from '@/db/insights';
-import { confirmMeal, getEntriesForDate } from '@/db/logEntries';
+import { confirmMeal, getEntriesForDate, revertToPlanned } from '@/db/logEntries';
 import { getAllMeasurements } from '@/db/measurements';
 import { getProfile } from '@/db/profile';
 import { reconcile } from '@/db/sync';
@@ -96,8 +96,16 @@ export default function TodayScreen() {
     router.push({ pathname: '/log', params: { meal: inferMeal(), date: todayISO, origin: 'home' } });
   const confirmPlanned = (meal: MealType) =>
     confirmMeal(todayISO, meal)
-      .then(() => {
-        showToast(`${MEAL_LABELS[meal]} marked as eaten`);
+      .then((ids) => {
+        showToast(`${MEAL_LABELS[meal]} marked as eaten`, {
+          action: {
+            label: 'Undo',
+            onPress: () =>
+              revertToPlanned(ids)
+                .then(reload)
+                .catch((e) => showError(e)),
+          },
+        });
         return reload();
       })
       .catch((e) => showError(e));

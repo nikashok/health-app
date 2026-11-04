@@ -1,5 +1,6 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import React from 'react';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   Platform,
   Pressable,
@@ -277,6 +278,31 @@ export function BottomAction({
   );
 }
 
+/**
+ * A full-width action pinned to the bottom of a form screen (Log Entry), so the main
+ * button is always in reach instead of at the end of a long scroll. Screens give their
+ * scroll content `STICKY_FOOTER_SPACE` of bottom padding. Hidden while typing, like
+ * BottomAction — the keyboard would otherwise lift it over the field being edited.
+ */
+export const STICKY_FOOTER_SPACE = 120;
+
+export function StickyFooter({ children }: { children: React.ReactNode }) {
+  const keyboardOpen = useKeyboardVisible();
+  const insets = useSafeAreaInsets();
+  if (keyboardOpen) return null;
+  return (
+    <View style={[styles.stickyWrap, { paddingBottom: 12 + insets.bottom }]} pointerEvents="box-none">
+      <LinearGradient
+        colors={['rgba(0,0,0,0)', 'rgba(0,0,0,0.94)', 'rgba(0,0,0,0.94)']}
+        locations={[0, 0.35, 1]}
+        style={StyleSheet.absoluteFill}
+        pointerEvents="none"
+      />
+      {children}
+    </View>
+  );
+}
+
 /** iOS segmented control. Good for 2–4 mutually exclusive options. */
 export function Segmented<T extends string>({
   options,
@@ -534,6 +560,7 @@ const styles = StyleSheet.create({
     elevation: 8,
   },
   bottomSecondary: { backgroundColor: colors.surface, paddingHorizontal: 26 },
+  stickyWrap: { position: 'absolute', left: 0, right: 0, bottom: 0, paddingTop: 28, paddingHorizontal: 16 },
   bottomText: { ...type.headline, color: '#ffffff' },
   bottomTextSecondary: { color: colors.leaf },
   segmented: {

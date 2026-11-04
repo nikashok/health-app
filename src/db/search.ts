@@ -4,13 +4,20 @@
  * when the M0 probe found FTS5 unavailable. Reference foods (cooked/raw) and the user's
  * custom foods all live on-device now, so search is instant and offline — no network.
  */
+import type { FoodTable } from '@/types/db';
+
 import { getDatabase, isFtsAvailable } from './database';
 import {
+  boostKey,
   buildCustomLikeSql,
   buildFtsMatch,
   buildLikeSql,
   buildLikeTerms,
   DEFAULT_LIMIT,
+  historyBoost,
+  LOGGED_FOOD_COUNTS,
+  rankResults,
+  tableToKind,
   GET_COOKED_BY_CODE,
   GET_CUSTOM_BY_CODE,
   GET_RAW_BY_CODE,
@@ -73,16 +80,49 @@ export async function searchReference(
   return [...cooked, ...raw];
 }
 
+/** The LIKE fallback can't rank, so it fetches a wider pool for rankResults to order. */
+const LIKE_POOL = 200;
+
 /**
- * Unified search: the user's own custom foods first, then cooked dishes (what users
- * usually log), then raw ingredients (LOG-2, CUST-2). Each group is ranked internally.
+ * Unified search over custom foods, cooked dishes and raw ingredients (LOG-2, CUST-2),
+ * ranked by how well each name matches (rankResults) with foods you've logged or starred
+ * moving up within a tier. Same ranking on native (FTS5) and web (LIKE).
  */
-export async function searchAll(q: string, limitPerKind = DEFAULT_LIMIT): Promise<SearchResult[]> {
-  const [custom, reference] = await Promise.all([
-    searchCustom(q, limitPerKind),
-    searchReference(q, limitPerKind),
-  ]);
-  return [...custom, ...reference];
+export async function searchAll(
+  q: string,
+  opts: { boosts?: ReadonlyMap<string, number>; limit?: number } = {}
+): Promise<SearchResult[]> {
+  const pool = isFtsAvailable() ? DEFAULT_LIMIT : LIKE_POOL;
+  const [custom, reference] = await Promise.all([searchCustom(q, pool), searchReference(q, pool)]);
+  return rankResults([...custom, ...reference], q, opts.boosts).slice(0, opts.limit ?? 60);
+}
+
+/**
+ * Per-food search boosts from your history: boostKey → 0..12 (more logs, more boost).
+ * Reads log_entries only to count — never for nutrition (CLAUDE.md rule 6).
+ */
+export async function getFoodBoosts(): Promise<Map<string, number>> {
+  const rows = await getDatabase().getAllAsync<{ food_table: FoodTable; food_code: string; n: number }>(
+    LOGGED_FOOD_COUNTS
+  );
+  return new Map(rows.map((r) => [boostKey(tableToKind(r.food_table), r.food_code), historyBoost(r.n)]));
+}
+
+/** A dish's own default serving ("1 bowl" = 200 g), for "≈ kcal per serving" in results. */
+export interface OwnServing {
+  measure_name: string;
+  grams_per_unit: number;
+}
+
+/** Own default servings for a batch of food codes (cooked dishes carry them). */
+export async function getOwnServings(codes: string[]): Promise<Map<string, OwnServing>> {
+  if (codes.length === 0) return new Map();
+  const rows = await getDatabase().getAllAsync<OwnServing & { food_code: string }>(
+    `SELECT food_code, measure_name, grams_per_unit FROM measures
+      WHERE is_default = 1 AND food_code IN (${codes.map(() => '?').join(',')})`,
+    ...codes
+  );
+  return new Map(rows.map((r) => [r.food_code, { measure_name: r.measure_name, grams_per_unit: r.grams_per_unit }]));
 }
 
 /**

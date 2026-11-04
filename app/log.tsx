@@ -12,15 +12,21 @@ import {
   View,
 } from 'react-native';
 
-import { getRecentFoods, type RecentFood } from '@/db/logEntries';
-import { searchAll, type SearchResult } from '@/db/search';
+import { addDays } from '@/calc/insights';
+import { deleteLogEntry, getRecentFoodsForMeal, type RecentFood } from '@/db/logEntries';
+import { portionText, quickLog } from '@/db/quickLog';
+import { getFoodBoosts, getOwnServings, searchAll, type OwnServing, type SearchResult } from '@/db/search';
 import { tableToKind, type FoodKind } from '@/db/searchSql';
 import type { MealType } from '@/types/db';
-import { BottomAction, Card, Chevron, GroupFooter, GroupHeader, PrimaryButton } from '@/ui/components';
-import { numberText } from '@/ui/format';
-import { MEAL_LABELS } from '@/ui/meals';
+import { BottomAction, Card, GroupFooter, GroupHeader, PrimaryButton, Segmented } from '@/ui/components';
+import { displayFoodName } from '@/ui/foodName';
+import { int, numberText } from '@/ui/format';
+import { Icon } from '@/ui/icons';
+import { MEAL_OPTS } from '@/ui/meals';
 import { colors, radius, type } from '@/ui/theme';
+import { showError, showToast } from '@/ui/toast';
 
+const recentKey = (r: RecentFood) => `${r.food_table}:${r.food_code ?? r.food_name}`;
 
 export default function LogScreen() {
   const router = useRouter();
@@ -28,18 +34,33 @@ export default function LogScreen() {
   // `origin` ('home') tells Log Entry where to return after saving.
   const params = useLocalSearchParams<{ meal?: MealType; date?: string; origin?: string }>();
   const origin = params.origin;
-  const meal: MealType = params.meal ?? 'breakfast';
   const date = params.date ?? today();
+  const isPlan = date > today();
 
+  // The meal is chosen here, where the one-tap "+" logs, as well as on Log Entry.
+  const [meal, setMeal] = useState<MealType>(params.meal ?? 'breakfast');
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<SearchResult[]>([]);
+  const [servings, setServings] = useState<Map<string, OwnServing>>(new Map());
   const [recents, setRecents] = useState<RecentFood[]>([]);
+  const [boosts, setBoosts] = useState<Map<string, number>>(new Map());
   const [searching, setSearching] = useState(false);
+  const [justAdded, setJustAdded] = useState<string | null>(null);
 
   useFocusEffect(
     useCallback(() => {
-      getRecentFoods().then(setRecents);
-    }, [])
+      let active = true;
+      Promise.all([getRecentFoodsForMeal(meal, addDays(today(), -60)), getFoodBoosts()]).then(
+        ([r, b]) => {
+          if (!active) return;
+          setRecents(r);
+          setBoosts(b);
+        }
+      );
+      return () => {
+        active = false;
+      };
+    }, [meal])
   );
 
   useEffect(() => {
@@ -52,9 +73,11 @@ export default function LogScreen() {
         return;
       }
       setSearching(true);
-      const r = await searchAll(term);
+      const r = await searchAll(term, { boosts });
+      const own = await getOwnServings(r.filter((x) => x.kind === 'cooked').map((x) => x.code));
       if (!cancelled) {
         setResults(r);
+        setServings(own);
         setSearching(false);
       }
     }, 180);
@@ -62,21 +85,13 @@ export default function LogScreen() {
       cancelled = true;
       clearTimeout(h);
     };
-  }, [query]);
+  }, [query, boosts]);
 
-  /** `last` prefills a recent food with the measure and quantity it was last logged in. */
-  function openFood(code: string | null, kind: FoodKind, last?: RecentFood) {
+  function openFood(code: string | null, kind: FoodKind) {
     if (!code) return;
     router.push({
       pathname: '/log-entry',
-      params: {
-        code,
-        table: kind,
-        meal,
-        date,
-        ...(origin ? { origin } : {}),
-        ...(last ? { lastMeasure: last.measure_name, lastQty: String(last.quantity) } : {}),
-      },
+      params: { code, table: kind, meal, date, ...(origin ? { origin } : {}) },
     });
   }
 
@@ -84,19 +99,62 @@ export default function LogScreen() {
     router.push({ pathname: '/custom-food', params: { meal, date, ...(origin ? { origin } : {}) } });
   }
 
+  /** "+" on a recent food: log it now with its last portion; the toast offers Undo. */
+  async function quickAdd(item: RecentFood) {
+    if (!item.food_code) return;
+    const kind = tableToKind(item.food_table);
+    try {
+      const r = await quickLog(
+        { code: item.food_code, kind, measureName: item.measure_name, quantity: item.quantity },
+        meal,
+        date,
+        isPlan
+      );
+      if (!r) {
+        openFood(item.food_code, kind); // its measure is gone — choose a portion instead
+        return;
+      }
+      const key = recentKey(item);
+      setJustAdded(key);
+      showToast(
+        `${isPlan ? 'Planned' : 'Logged'} ${displayFoodName(r.food.name, r.food.kind)} · ${portionText(
+          r.measureName,
+          r.quantity
+        )} · ${int(r.kcal)} kcal`,
+        {
+          action: {
+            label: 'Undo',
+            onPress: () =>
+              deleteLogEntry(r.id)
+                .then(() => {
+                  setJustAdded((k) => (k === key ? null : k));
+                  showToast('Removed');
+                })
+                .catch((e) => showError(e, 'Couldn’t undo — delete it from the Diary')),
+          },
+        }
+      );
+    } catch (e) {
+      showError(e);
+    }
+  }
+
   const trimmed = query.trim();
   const showRecents = trimmed.length === 0 && recents.length > 0;
   const noMatch = trimmed.length > 0 && !searching && results.length === 0;
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.subtitle}>
-          {MEAL_LABELS[meal]} · {dayjs(date).format('D MMM')}
-        </Text>
-      </View>
+      <Segmented options={MEAL_OPTS} value={meal} onChange={setMeal} />
+      <Text style={styles.subtitle}>
+        {isPlan
+          ? `Planning for ${dayjs(date).format('ddd D MMM')}`
+          : date === today()
+            ? `Today · ${dayjs(date).format('D MMM')}`
+            : dayjs(date).format('ddd D MMM')}
+      </Text>
 
       <View style={styles.searchBox}>
-        <Text style={styles.searchIcon}>⌕</Text>
+        <Icon name="search" size={18} color={colors.muted} />
         <TextInput
           style={styles.input}
           placeholder="Search dishes, rice, dal, curd…"
@@ -108,6 +166,7 @@ export default function LogScreen() {
           autoCorrect={false}
           autoFocus
           returnKeyType="search"
+          accessibilityLabel="Search foods"
         />
         {query.length > 0 ? (
           <Pressable
@@ -117,9 +176,7 @@ export default function LogScreen() {
             accessibilityRole="button"
             accessibilityLabel="Clear search"
           >
-            <View style={styles.clear}>
-              <Text style={styles.clearText}>✕</Text>
-            </View>
+            <Icon name="clear" size={18} color={colors.lineStrong} />
           </Pressable>
         ) : null}
       </View>
@@ -137,12 +194,21 @@ export default function LogScreen() {
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
           contentContainerStyle={styles.listContent}
-          keyExtractor={(item) => `${item.food_table}:${item.food_code ?? item.food_name}`}
-          ListHeaderComponent={<GroupHeader>Recently logged</GroupHeader>}
-          ListFooterComponent={<SearchNote />}
+          keyExtractor={recentKey}
+          ListHeaderComponent={<GroupHeader>Recent</GroupHeader>}
+          ListFooterComponent={
+            <GroupFooter>
+              Foods you have at this meal come first. Tap + to log the same portion again.
+            </GroupFooter>
+          }
           renderItem={({ item, index }) => (
             <CardRow first={index === 0} last={index === recents.length - 1}>
-              <RecentRow item={item} onPress={openFood} />
+              <RecentRow
+                item={item}
+                added={justAdded === recentKey(item)}
+                onOpen={() => openFood(item.food_code, tableToKind(item.food_table))}
+                onAdd={() => quickAdd(item)}
+              />
             </CardRow>
           )}
         />
@@ -167,10 +233,14 @@ export default function LogScreen() {
               </Card>
             ) : null
           }
-          ListFooterComponent={results.length > 0 ? <SearchNote /> : null}
+          ListFooterComponent={
+            results.length > 0 ? (
+              <GroupFooter>Can’t find it? Save it once as a custom food.</GroupFooter>
+            ) : null
+          }
           renderItem={({ item, index }) => (
             <CardRow first={index === 0} last={index === results.length - 1}>
-              <ResultRow item={item} onPress={openFood} />
+              <ResultRow item={item} serving={servings.get(item.code)} onPress={openFood} />
             </CardRow>
           )}
         />
@@ -200,9 +270,7 @@ function CardRow({
   last: boolean;
 }) {
   return (
-    <View
-      style={[styles.cardRow, first && styles.cardRowFirst, last && styles.cardRowLast]}
-    >
+    <View style={[styles.cardRow, first && styles.cardRowFirst, last && styles.cardRowLast]}>
       <View style={[styles.cardRowInner, !first && styles.cardRowDivider]}>{children}</View>
     </View>
   );
@@ -210,58 +278,84 @@ function CardRow({
 
 function RecentRow({
   item,
-  onPress,
+  added,
+  onOpen,
+  onAdd,
 }: {
   item: RecentFood;
-  onPress: (code: string | null, kind: FoodKind, last?: RecentFood) => void;
+  added: boolean;
+  onOpen: () => void;
+  onAdd: () => void;
 }) {
+  const name = displayFoodName(item.food_name, item.food_table);
+  const portion = portionText(item.measure_name, item.quantity);
   return (
-    <Pressable
-      style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
-      onPress={() => onPress(item.food_code, tableToKind(item.food_table), item)}
-    >
-      <View style={styles.rowMain}>
-        <Text style={styles.name} numberOfLines={2}>{item.food_name}</Text>
-        <Text style={styles.meta}>
-          Last:{' '}
-          {item.measure_name === 'grams'
-            ? `${Math.round(item.quantity)} g`
-            : `${item.quantity} × ${item.measure_name}`}
+    <View style={styles.recentRow}>
+      <Pressable
+        style={({ pressed }) => [styles.recentMain, pressed && styles.rowPressed]}
+        onPress={onOpen}
+        accessibilityRole="button"
+        accessibilityLabel={`${name}, last ${portion}. Choose a portion`}
+      >
+        <Text style={styles.name} numberOfLines={2}>
+          {name}
         </Text>
-      </View>
-      <Chevron />
-    </Pressable>
+        <Text style={styles.meta}>
+          {portion}
+          {item.kcal != null ? ` · ${int(item.kcal)} kcal` : ''}
+        </Text>
+      </Pressable>
+      <Pressable
+        onPress={onAdd}
+        style={({ pressed }) => [styles.addBtn, added && styles.addBtnDone, pressed && styles.addBtnPressed]}
+        hitSlop={4}
+        accessibilityRole="button"
+        accessibilityLabel={`Log ${portion} ${name} now`}
+      >
+        <Icon name={added ? 'check' : 'plus'} size={18} color={added ? colors.good : colors.leaf} strokeWidth={2.6} />
+      </Pressable>
+    </View>
   );
 }
 
 function ResultRow({
   item,
+  serving,
   onPress,
 }: {
   item: SearchResult;
+  serving?: OwnServing;
   onPress: (code: string | null, kind: FoodKind) => void;
 }) {
+  const name = displayFoodName(item.name, item.kind);
+  // Per serving when the dish has one (per-100 g × serving grams — the same math as logging).
+  const perServing =
+    serving && item.energy_kcal != null
+      ? `1 ${serving.measure_name} ≈ ${int((item.energy_kcal * serving.grams_per_unit) / 100)} kcal`
+      : null;
   return (
     <Pressable
       style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
       onPress={() => onPress(item.code, item.kind)}
+      accessibilityRole="button"
     >
       <View style={styles.rowMain}>
-        <Text style={styles.name} numberOfLines={2}>{item.name}</Text>
+        <Text style={styles.name} numberOfLines={2}>
+          {name}
+        </Text>
         <Text style={styles.meta}>
-          {kindLabel(item.kind)} · <Text style={styles.metaKcal}>{numberText(item.energy_kcal)}</Text> kcal/100g
+          {kindLabel(item.kind)} ·{' '}
+          {perServing ?? (
+            <>
+              <Text style={styles.metaKcal}>{numberText(item.energy_kcal)}</Text> kcal/100 g
+            </>
+          )}
         </Text>
       </View>
-      <Chevron />
+      <View style={styles.chevron}>
+        <Icon name="chevron-right" size={14} color={colors.chevron} strokeWidth={2.6} />
+      </View>
     </Pressable>
-  );
-}
-
-function SearchNote() {
-  return (
-    <GroupFooter>
-      Searching your offline food database. Can’t find it? Save it once as a custom food.
-    </GroupFooter>
   );
 }
 
@@ -276,9 +370,8 @@ function today(): string {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, paddingHorizontal: 16, paddingTop: 4, backgroundColor: colors.bg },
-  header: { paddingHorizontal: 4 },
-  subtitle: { ...type.subhead, color: colors.muted },
+  container: { flex: 1, paddingHorizontal: 16, paddingTop: 8, backgroundColor: colors.bg },
+  subtitle: { ...type.footnote, color: colors.muted, marginTop: 8, marginLeft: 4 },
   searchBox: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -289,18 +382,8 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     paddingHorizontal: 10,
   },
-  searchIcon: { fontSize: 19, color: colors.muted },
   input: { flex: 1, height: 40, fontSize: 17, color: colors.ink },
   clearHit: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center', marginRight: -6 },
-  clear: {
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    backgroundColor: colors.lineStrong,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  clearText: { color: '#000000', fontSize: 11, fontWeight: '700' },
   searching: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingTop: 12 },
   searchingText: { ...type.footnote, color: colors.muted },
   listContent: { paddingBottom: 140 },
@@ -318,8 +401,21 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     paddingRight: 16,
   },
+  recentRow: { flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 60, paddingRight: 12 },
+  recentMain: { flex: 1, minWidth: 0, gap: 2, paddingVertical: 10 },
+  addBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.mint,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  addBtnDone: { backgroundColor: 'rgba(48,209,88,0.16)' },
+  addBtnPressed: { opacity: 0.7 },
   rowPressed: { opacity: 0.6 },
   rowMain: { flex: 1, minWidth: 0, gap: 2 },
+  chevron: { marginLeft: 8 },
   name: { ...type.body, color: colors.ink },
   meta: { ...type.footnote, color: colors.muted },
   metaKcal: { color: colors.energy },

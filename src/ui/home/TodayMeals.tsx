@@ -4,6 +4,7 @@ import { MEAL_ORDER, mealConsumedKcal } from '@/calc/dayTotals';
 import type { LogEntry, MealType } from '@/types/db';
 import { Card, Row } from '@/ui/components';
 import { int } from '@/ui/format';
+import { displayFoodName } from '@/ui/foodName';
 import { Icon } from '@/ui/icons';
 import { MEAL_LABELS } from '@/ui/meals';
 import { colors } from '@/ui/theme';
@@ -11,7 +12,8 @@ import { colors } from '@/ui/theme';
 import type { HomeRouter } from './homeUtils';
 import { styles } from './styles';
 
-const names = (entries: LogEntry[]) => entries.map((e) => e.food_name).join(' · ');
+const names = (entries: LogEntry[]) =>
+  entries.map((e) => displayFoodName(e.food_name, e.food_table)).join(' · ');
 
 /**
  * Today's meals. Each row shows what was eaten (kcal counts logged food only), any plans

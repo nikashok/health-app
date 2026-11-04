@@ -112,6 +112,71 @@ export function buildLikeSql(kind: FoodKind, termCount: number): string {
            WHERE ${where} ORDER BY f.name LIMIT ?`;
 }
 
+// ---- relevance ranking (both platforms) -----------------------------------
+/**
+ * How well a name matches the query, in tiers far enough apart (≥20) that a history boost
+ * (≤15) only reorders foods WITHIN a tier — a dish you log often can rise above other
+ * equally good matches, but never above a better match:
+ *   100 exact name · 80 starts with the query · 60 every term starts a word
+ *    40 the first term starts a word · 10 the terms only appear inside words
+ * The web LIKE path matches inside words ("tea" in "steamed"), so this is what keeps
+ * "Hot tea" above "Caramel custard (steamed)".
+ */
+export function matchTier(name: string, q: string): number {
+  const terms = tokenize(q);
+  if (terms.length === 0) return 0;
+  const norm = (s: string) =>
+    s.toLowerCase().replace(/[^a-z0-9\s]+/g, ' ').replace(/\s+/g, ' ').trim();
+  const n = norm(name);
+  const main = norm(name.split('(')[0]); // without the "(Hindi name)" alias
+  const phrase = terms.join(' ');
+  if (n === phrase || main === phrase) return 100;
+  if (n.startsWith(phrase)) return 80;
+  const startsWord = (t: string) => new RegExp(`(^|\\s)${t}`).test(n);
+  if (terms.every(startsWord)) return 60;
+  if (startsWord(terms[0])) return 40;
+  return 10;
+}
+
+/** Key used for per-food boosts: `${food_table}:${code}` (log_entries' naming). */
+export function boostKey(kind: FoodKind, code: string): string {
+  return `${kindToTable(kind)}:${code}`;
+}
+
+/**
+ * Re-rank search results by match tier, then by boost (foods you've logged or starred),
+ * then by shorter name (ignoring any "(…)" alias), keeping the incoming order as the
+ * final tie-break. `boosts` maps boostKey → 0..15.
+ */
+export function rankResults(
+  results: SearchResult[],
+  q: string,
+  boosts: ReadonlyMap<string, number> = new Map()
+): SearchResult[] {
+  const len = (s: string) => s.split(' (')[0].length;
+  return results
+    .map((r, i) => ({
+      r,
+      i,
+      score: matchTier(r.name, q) + Math.min(15, boosts.get(boostKey(r.kind, r.code)) ?? 0),
+    }))
+    .sort((a, b) => b.score - a.score || len(a.r.name) - len(b.r.name) || a.i - b.i)
+    .map((x) => x.r);
+}
+
+/** How often each food has been logged (any status), for the search history boost. */
+export const LOGGED_FOOD_COUNTS = `
+  SELECT food_table, food_code, COUNT(*) AS n
+    FROM log_entries
+   WHERE food_code IS NOT NULL
+   GROUP BY food_table, food_code`;
+
+/** History boost: 8 for anything logged before, up to 12 for a regular. */
+export function historyBoost(timesLogged: number): number {
+  if (timesLogged <= 0) return 0;
+  return Math.min(12, 8 + Math.floor(Math.log2(timesLogged)));
+}
+
 // ---- getByCode -----------------------------------------------------------
 export const GET_COOKED_BY_CODE = `SELECT ${COOKED_COLS} FROM cooked_foods c WHERE c.food_code = ?`;
 export const GET_RAW_BY_CODE = `SELECT ${RAW_COLS} FROM foods f WHERE f.code = ?`;
