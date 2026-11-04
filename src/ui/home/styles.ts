@@ -39,6 +39,7 @@ export const styles = StyleSheet.create({
   bodyValRow: { flexDirection: 'row', alignItems: 'baseline', gap: 3, marginTop: 4 },
   bodyVal: heroNumber(28),
   bodyUnit: { ...type.subhead, fontWeight: '600', color: colors.muted },
+  bodySub: { ...type.caption, color: colors.muted },
   bodyChange: { ...type.footnote, color: colors.muted },
   spark: { height: 40, marginTop: 8 },
 
@@ -141,6 +142,8 @@ export const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   mealAddPressed: { opacity: 0.7 },
+
+  sectionGap: { height: 12 },
 
   // ── Empty state ──
   emptyCard: { padding: 18, gap: 6 },

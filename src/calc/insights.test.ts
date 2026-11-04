@@ -5,6 +5,7 @@ import {
   addDays,
   buildRangeInsights,
   completedAverage,
+  completedValueAverage,
   dateRange,
   daysInBand,
   kcalBand,
@@ -175,5 +176,18 @@ describe('completedAverage', () => {
       lowDays: 1,
     });
     expect(completedAverage([])).toEqual({ avgKcal: 0, countedDays: 0, lowDays: 0 });
+  });
+});
+
+describe('completedValueAverage', () => {
+  test('averages over the same counted days as the calorie average', () => {
+    const past = [
+      { kcal: 2000, value: 120 },
+      { kcal: 300, value: 10 }, // a scrap log — left out
+      { kcal: 0, value: 0 }, // nothing logged — left out
+      { kcal: 1800, value: 100 },
+    ];
+    expect(completedValueAverage(past)).toEqual({ avg: 110, countedDays: 2 });
+    expect(completedValueAverage([])).toEqual({ avg: 0, countedDays: 0 });
   });
 });

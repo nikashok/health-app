@@ -11,6 +11,7 @@ import type { PatternEntry } from '@/calc/foodPatterns';
 import {
   ANY_LOGGED,
   DAILY_KCAL_RANGE,
+  DAILY_TOTALS_RANGE,
   LOGGED_DATES_DESC,
   LOGGED_ENTRIES_BETWEEN,
   MEAL_KCAL_FOR_DATE,
@@ -39,6 +40,23 @@ export async function getDailyKcal(
   );
   const map: Record<string, number> = {};
   for (const r of rows) map[r.date] = r.kcal ?? 0;
+  return map;
+}
+
+export interface DayTotals {
+  kcal: number;
+  protein: number;
+}
+
+/** date → consumed kcal + protein for each day with logged data in [start, end]. */
+export async function getDailyTotals(start: string, end: string): Promise<Record<string, DayTotals>> {
+  const rows = await getDatabase().getAllAsync<{ date: string; kcal: number; protein: number }>(
+    DAILY_TOTALS_RANGE,
+    start,
+    end
+  );
+  const map: Record<string, DayTotals> = {};
+  for (const r of rows) map[r.date] = { kcal: r.kcal ?? 0, protein: r.protein ?? 0 };
   return map;
 }
 

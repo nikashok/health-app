@@ -7,6 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { consumedTotals, MEAL_ORDER, plannedTotals } from '@/calc/dayTotals';
 import { usualMeal } from '@/calc/foodPatterns';
 import { addDays, streakFrom } from '@/calc/insights';
+import { trendSeries } from '@/calc/trend';
 import { getLoggedDates, getPatternEntries } from '@/db/insights';
 import { confirmMeal, getEntriesForDate, revertToPlanned } from '@/db/logEntries';
 import { getAllMeasurements } from '@/db/measurements';
@@ -16,11 +17,13 @@ import type { MealType } from '@/types/db';
 import { BottomAction } from '@/ui/components';
 import { DaySummaryCard } from '@/ui/DaySummaryCard';
 import { displayFoodName } from '@/ui/foodName';
-import { BodyTrends } from '@/ui/home/BodyTrends';
+import { BodyTrends, readings } from '@/ui/home/BodyTrends';
 import type { HomeState } from '@/ui/home/homeUtils';
+import { TARGET_DRIFT_KG, TargetsNudge } from '@/ui/home/TargetsNudge';
 import { styles } from '@/ui/home/styles';
 import { TodayMeals } from '@/ui/home/TodayMeals';
 import { inferMeal, MEAL_LABELS } from '@/ui/meals';
+import { getPref, setPref } from '@/ui/prefs';
 import { ScreenTitle } from '@/ui/ScreenTitle';
 import { SyncStatus } from '@/ui/SyncStatus';
 import { colors } from '@/ui/theme';
@@ -37,6 +40,17 @@ async function loadToday(): Promise<HomeState | null> {
     getLoggedDates(todayISO),
     getPatternEntries(addDays(todayISO, -60), todayISO),
   ]);
+  const weightTrend = trendSeries(readings(allMeasurements, 'weight_kg'));
+  const trend = weightTrend.length > 0 ? weightTrend[weightTrend.length - 1].trend : null;
+  const dismissed = parseFloat((await getPref('targetsNudgeDismissedAt')) ?? '');
+  const drift =
+    trend != null && profile.weight_kg != null ? Math.abs(trend - profile.weight_kg) : 0;
+  const nudgeTrend =
+    trend != null &&
+    drift >= TARGET_DRIFT_KG &&
+    !(Number.isFinite(dismissed) && Math.abs(trend - dismissed) < TARGET_DRIFT_KG)
+      ? trend
+      : null;
   const usual: HomeState['usual'] = {};
   for (const meal of MEAL_ORDER) {
     const u = usualMeal(history, meal, todayISO);
@@ -48,6 +62,7 @@ async function loadToday(): Promise<HomeState | null> {
     allMeasurements,
     streak: streakFrom(loggedDates, todayISO),
     usual,
+    nudgeTrend,
   };
 }
 
@@ -96,7 +111,7 @@ export default function TodayScreen() {
     );
   }
 
-  const { profile, today, allMeasurements, streak, usual } = state;
+  const { profile, today, allMeasurements, streak, usual, nudgeTrend } = state;
   const todayISO = dayjs().format('YYYY-MM-DD');
   const consumed = consumedTotals(today);
   const planned = plannedTotals(today);
@@ -151,6 +166,19 @@ export default function TodayScreen() {
             }
             onGoalPress={() => router.push('/onboarding')}
           />
+          {nudgeTrend != null && profile.weight_kg != null ? (
+            <TargetsNudge
+              profileWeight={profile.weight_kg}
+              trend={nudgeTrend}
+              onUpdate={() =>
+                router.push({ pathname: '/onboarding', params: { weight: nudgeTrend.toFixed(1) } })
+              }
+              onDismiss={() => {
+                setPref('targetsNudgeDismissedAt', String(nudgeTrend));
+                setState({ ...state, nudgeTrend: null });
+              }}
+            />
+          ) : null}
           <TodayMeals
             today={today}
             todayISO={todayISO}

@@ -17,6 +17,8 @@ export interface HomeState {
   streak: number;
   /** Your usual foods per meal (derived, never stored) — a hint on empty meal rows. */
   usual: Partial<Record<MealType, string>>;
+  /** Trend weight when it has drifted far enough from the profile weight to re-target. */
+  nudgeTrend: number | null;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -81,35 +83,4 @@ export function changeLine(
   return `${sign}${Math.abs(delta).toFixed(1)} ${unit} ${suffix}`;
 }
 
-/**
- * Hold the last known reading across days with no entry, so a sparkline stays flat
- * instead of dropping to the baseline. Leading gaps (before the first ever reading)
- * stay 0, which buildSparkPoints already treats as "no data".
- */
-export function carryForward(values: (number | null)[]): number[] {
-  let last = 0;
-  return values.map((v) => {
-    if (v != null && v > 0) last = v;
-    return last;
-  });
-}
 
-export function buildSparkPoints(all: number[], W: number, H: number): string {
-  // Start at the first real reading: days before it (e.g. weight logged before waist ever
-  // was) have no value and would otherwise drag the line down to the baseline.
-  const first = all.findIndex((v) => v > 0);
-  const values = first < 0 ? [] : all.slice(first);
-  const valid = values.filter((v) => v > 0);
-  if (valid.length < 2) return '';
-  const min = Math.min(...valid);
-  const max = Math.max(...valid);
-  const range = max - min || 1;
-  const step = W / (values.length - 1);
-  return values
-    .map((v, i) => {
-      const x = i * step;
-      const y = v > 0 ? H - ((v - min) / range) * (H - 8) - 4 : H - 4;
-      return `${x.toFixed(1)},${y.toFixed(1)}`;
-    })
-    .join(' ');
-}

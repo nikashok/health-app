@@ -140,7 +140,7 @@ export default function MeasurementScreen() {
             style={styles.input}
             value={weight}
             onChangeText={setWeight}
-            placeholder={prevWeight != null ? String(prevWeight) : '0'}
+            placeholder="—"
             placeholderTextColor={colors.placeholder}
             selectionColor={colors.leaf}
             keyboardType="decimal-pad"
@@ -153,7 +153,7 @@ export default function MeasurementScreen() {
             style={styles.input}
             value={waist}
             onChangeText={setWaist}
-            placeholder={prevWaist != null ? String(prevWaist) : '0'}
+            placeholder="—"
             placeholderTextColor={colors.placeholder}
             selectionColor={colors.leaf}
             keyboardType="decimal-pad"
@@ -163,10 +163,10 @@ export default function MeasurementScreen() {
         </FieldRow>
       </Card>
       <GroupFooter>
+        {lastLine(prevWeight, prevWaist)}
         {isToday
           ? 'Logged once a day — saving again updates today’s entry.'
-          : 'Saving replaces this day’s reading.'}{' '}
-        Greyed values are your last reading, kept for reference until you enter a new one.
+          : 'Saving replaces this day’s reading.'}
       </GroupFooter>
 
       <PrimaryButton
@@ -192,8 +192,8 @@ export default function MeasurementScreen() {
               >
                 <Text style={styles.histDate}>{dayjs(m.measured_on).format('ddd, D MMM')}</Text>
                 <View style={styles.histVals}>
-                  <Text style={styles.histVal}>{m.weight_kg != null ? `${m.weight_kg} kg` : '—'}</Text>
-                  <Text style={styles.histVal}>{m.waist_cm != null ? `${m.waist_cm} cm` : '—'}</Text>
+                  <Text style={styles.histVal}>{m.weight_kg != null ? `${m.weight_kg.toFixed(1)} kg` : '—'}</Text>
+                  <Text style={styles.histVal}>{m.waist_cm != null ? `${m.waist_cm.toFixed(1)} cm` : '—'}</Text>
                   <Chevron style={styles.histChevron} />
                 </View>
               </Row>
@@ -206,16 +206,32 @@ export default function MeasurementScreen() {
   );
 }
 
-/** Newest value of `key` recorded strictly before `date`. `recent` is newest-first. */
+/** Newest reading of `key` recorded strictly before `date`. `recent` is newest-first. */
 function lastBefore(
   recent: BodyMeasurement[],
   date: string,
   key: 'weight_kg' | 'waist_cm'
-): number | null {
+): { value: number; date: string } | null {
   for (const m of recent) {
-    if (m.measured_on < date && m[key] != null) return m[key];
+    const v = m[key];
+    if (m.measured_on < date && v != null) return { value: v, date: m.measured_on };
   }
   return null;
+}
+
+/**
+ * "Last: 77.7 kg on Mon 2 Nov · 89.4 cm on Tue 27 Oct. " — the previous readings as
+ * plain text, instead of greyed placeholder text that looks like an entered value.
+ */
+function lastLine(
+  w: { value: number; date: string } | null,
+  waist: { value: number; date: string } | null
+): string {
+  const parts = [
+    w ? `${w.value.toFixed(1)} kg on ${dayjs(w.date).format('ddd D MMM')}` : null,
+    waist ? `${waist.value.toFixed(1)} cm on ${dayjs(waist.date).format('ddd D MMM')}` : null,
+  ].filter(Boolean);
+  return parts.length > 0 ? `Last: ${parts.join(' · ')}. ` : '';
 }
 
 function today(): string {

@@ -1,4 +1,4 @@
-import { Stack, useRouter } from 'expo-router';
+import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 
@@ -42,6 +42,9 @@ const TARGET_FIELDS: { key: keyof Targets; label: string; suffix: string; color:
 
 export default function OnboardingScreen() {
   const router = useRouter();
+  // `weight` arrives from Today's "Update your targets?" nudge (the current trend weight).
+  const params = useLocalSearchParams<{ weight?: string }>();
+  const [weightFromTrend, setWeightFromTrend] = useState(false);
 
   // Pre-selected defaults so the segmented controls / chips read as a complete iOS
   // form (a segment is always active). The user can change any of them.
@@ -73,6 +76,10 @@ export default function OnboardingScreen() {
       if (p.weight_kg != null) setWeight(String(p.weight_kg));
       if (p.activity_level) setActivity(p.activity_level as ActivityLevel);
       if (p.goal) setGoal(p.goal as Goal);
+      if (params.weight && parseFloat(params.weight) > 0) {
+        setWeight(params.weight);
+        setWeightFromTrend(true);
+      }
       if (p.targets_source === 'manual') {
         setOverride(true);
         setManualTargets({
@@ -174,6 +181,9 @@ export default function OnboardingScreen() {
         <NumRow label="Height" value={height} onChangeText={touch(setHeight)} placeholder="170" suffix="cm" />
         <NumRow label="Weight" value={weight} onChangeText={touch(setWeight)} placeholder="70" suffix="kg" />
       </Card>
+      {weightFromTrend ? (
+        <GroupFooter>Weight filled in from your current weight trend. Save to update your targets.</GroupFooter>
+      ) : null}
 
       <GroupHeader>Activity level</GroupHeader>
       <View style={styles.chips}>

@@ -12,6 +12,13 @@ export const DAILY_KCAL_RANGE = `
    WHERE status = 'logged' AND log_date BETWEEN ? AND ?
    GROUP BY log_date`;
 
+/** Per-day consumed kcal AND protein over [start, end] (Progress tab averages). */
+export const DAILY_TOTALS_RANGE = `
+  SELECT log_date AS date, SUM(kcal) AS kcal, SUM(COALESCE(protein_g, 0)) AS protein
+    FROM log_entries
+   WHERE status = 'logged' AND log_date BETWEEN ? AND ?
+   GROUP BY log_date`;
+
 /** Per-meal consumed kcal for a single date (today's split, HOME-2). */
 export const MEAL_KCAL_FOR_DATE = `
   SELECT meal_type, SUM(kcal) AS kcal

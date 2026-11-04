@@ -130,6 +130,20 @@ export function ratio(consumed: number, target: number | null | undefined): numb
 }
 
 /**
+ * Average of some daily value (e.g. protein) over FINISHED, properly logged days: the
+ * same days the calorie average uses (today excluded by the caller; days under `minKcal`
+ * treated as incomplete logs), so the two averages always describe the same days.
+ */
+export function completedValueAverage(
+  pastDays: readonly { kcal: number; value: number }[],
+  minKcal = MIN_COUNTED_KCAL
+): { avg: number; countedDays: number } {
+  const counted = pastDays.filter((d) => d.kcal >= minKcal);
+  const avg = counted.length === 0 ? 0 : counted.reduce((s, d) => s + d.value, 0) / counted.length;
+  return { avg, countedDays: counted.length };
+}
+
+/**
  * Consecutive days with logged food, ending today — or ending yesterday while today has
  * nothing logged yet, so an in-progress morning doesn't break the streak. `dates` is any
  * list of YYYY-MM-DD days that have logged intake (order and duplicates don't matter).
