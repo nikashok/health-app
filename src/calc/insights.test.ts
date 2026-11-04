@@ -1,7 +1,16 @@
 /**
  * Unit tests for week/month insight rollups.
  */
-import { addDays, buildRangeInsights, dateRange, daysInBand, kcalBand, ratio } from './insights';
+import {
+  addDays,
+  buildRangeInsights,
+  completedAverage,
+  dateRange,
+  daysInBand,
+  kcalBand,
+  ratio,
+  streakFrom,
+} from './insights';
 
 describe('date math', () => {
   test('addDays handles month/year boundaries', () => {
@@ -118,5 +127,53 @@ describe('ratio', () => {
   test('consumed / target, 0 when no target', () => {
     expect(ratio(1000, 2000)).toBe(0.5);
     expect(ratio(1000, null)).toBe(0);
+  });
+});
+
+describe('streakFrom', () => {
+  const today = '2026-11-04';
+
+  test('counts back from today when today is logged', () => {
+    expect(streakFrom(['2026-11-04', '2026-11-03', '2026-11-02'], today)).toBe(3);
+  });
+
+  test('starts from yesterday while today is still empty', () => {
+    expect(streakFrom(['2026-11-03', '2026-11-02'], today)).toBe(2);
+  });
+
+  test('a gap ends the streak', () => {
+    expect(streakFrom(['2026-11-04', '2026-11-03', '2026-11-01'], today)).toBe(2);
+    expect(streakFrom(['2026-11-02'], today)).toBe(0);
+  });
+
+  test('is not capped at a month (the old 30-day window bug)', () => {
+    const dates = dateRange(today, 75); // 75 consecutive days ending today
+    expect(streakFrom(dates, today)).toBe(75);
+    expect(streakFrom(dates.slice(0, -1), today)).toBe(74); // today not logged yet
+  });
+
+  test('order and duplicates do not matter', () => {
+    expect(streakFrom(['2026-11-03', '2026-11-04', '2026-11-03'], today)).toBe(2);
+  });
+});
+
+describe('completedAverage', () => {
+  test('averages finished days only and reports days left out as too low', () => {
+    const past = [
+      { date: '2026-11-01', kcal: 1800 },
+      { date: '2026-11-02', kcal: 0 }, // nothing logged — not counted, not "low"
+      { date: '2026-11-03', kcal: 300 }, // a scrap log — left out, reported
+      { date: '2026-11-04', kcal: 2200 },
+    ];
+    expect(completedAverage(past)).toEqual({ avgKcal: 2000, countedDays: 2, lowDays: 1 });
+  });
+
+  test('no counted days → zero average', () => {
+    expect(completedAverage([{ date: '2026-11-01', kcal: 200 }])).toEqual({
+      avgKcal: 0,
+      countedDays: 0,
+      lowDays: 1,
+    });
+    expect(completedAverage([])).toEqual({ avgKcal: 0, countedDays: 0, lowDays: 0 });
   });
 });

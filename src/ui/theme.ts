@@ -61,11 +61,12 @@ export const colors = {
   chevron: '#48484a',
   switchOff: '#39393d',
 
-  // Calorie trend bars: within ±100 kcal of target = the app's status green, more than
-  // 100 over = the app's status red, more than 100 under = a pale tint of the same green.
+  // Calorie trend bars: within ±100 kcal of target = solid status green, more than 100
+  // over = solid status red, more than 100 under = this dim fill drawn with a green
+  // outline (a different shape, so it never depends on telling two greens apart).
   trendOn: '#30d158',
   trendOver: '#ff453a',
-  trendUnder: '#97e8ab',
+  trendUnder: 'rgba(48,209,88,0.22)' as string,
 
   // Planned entries
   plannedRow: 'rgba(255,106,26,0.08)' as string,

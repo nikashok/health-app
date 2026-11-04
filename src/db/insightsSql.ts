@@ -19,5 +19,18 @@ export const MEAL_KCAL_FOR_DATE = `
    WHERE status = 'logged' AND log_date = ?
    GROUP BY meal_type`;
 
+/**
+ * Days with logged intake on or before a date, newest first (drives the logging streak,
+ * which has no fixed window). Planned rows never count.
+ */
+export const LOGGED_DATES_DESC = `
+  SELECT log_date AS date
+    FROM log_entries
+   WHERE status = 'logged' AND log_date <= ?
+   GROUP BY log_date
+  HAVING SUM(kcal) > 0
+   ORDER BY log_date DESC
+   LIMIT ?`;
+
 /** Whether any logged entry exists at all (drives the new-user empty state). */
 export const ANY_LOGGED = `SELECT EXISTS(SELECT 1 FROM log_entries WHERE status='logged') AS has`;

@@ -33,6 +33,7 @@ export interface HomeState {
   week: RangeInsights;
   monthMap: Record<string, number>;
   allMeasurements: BodyMeasurement[];
+  streak: number;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -43,21 +44,6 @@ export function inferMeal(): MealType {
   if (h < 16) return 'lunch';
   if (h < 19) return 'snack';
   return 'dinner';
-}
-
-export function computeStreak(monthMap: Record<string, number>, today: string): number {
-  // If today has no data yet, start from yesterday so an in-progress day doesn't break the streak.
-  let d = (monthMap[today] ?? 0) > 0 ? today : addDays(today, -1);
-  let streak = 0;
-  for (let i = 0; i < 31; i++) {
-    if ((monthMap[d] ?? 0) > 0) {
-      streak++;
-      d = addDays(d, -1);
-    } else {
-      break;
-    }
-  }
-  return streak;
 }
 
 export function getDayInitial(isoDate: string): string {
@@ -133,7 +119,11 @@ export function carryForward(values: (number | null)[]): number[] {
   });
 }
 
-export function buildSparkPoints(values: number[], W: number, H: number): string {
+export function buildSparkPoints(all: number[], W: number, H: number): string {
+  // Start at the first real reading: days before it (e.g. weight logged before waist ever
+  // was) have no value and would otherwise drag the line down to the baseline.
+  const first = all.findIndex((v) => v > 0);
+  const values = first < 0 ? [] : all.slice(first);
   const valid = values.filter((v) => v > 0);
   if (valid.length < 2) return '';
   const min = Math.min(...valid);

@@ -25,7 +25,7 @@ import {
   TintButton,
 } from '@/ui/components';
 import { int } from '@/ui/format';
-import { showToast } from '@/ui/toast';
+import { showError, showToast } from '@/ui/toast';
 import { isGrams, qtyForSwitch, qtyStep } from '@/ui/quantity';
 import { colors, heroNumber, type } from '@/ui/theme';
 
@@ -132,6 +132,8 @@ export default function EditEntryScreen() {
       });
       showToast('Entry updated');
       router.back();
+    } catch (e) {
+      showError(e);
     } finally {
       setBusy(false);
     }
@@ -139,9 +141,13 @@ export default function EditEntryScreen() {
 
   function onDelete() {
     confirmDestructive('Delete entry?', 'This removes it from your diary.', 'Delete', async () => {
-      await deleteLogEntry(entryId);
-      showToast('Entry deleted');
-      router.back();
+      try {
+        await deleteLogEntry(entryId);
+        showToast('Entry deleted');
+        router.back();
+      } catch (e) {
+        showError(e, 'Couldn’t delete — try again');
+      }
     });
   }
 
@@ -233,10 +239,12 @@ export default function EditEntryScreen() {
         <TintButton
           title="Ate it — confirm plan"
           onPress={() =>
-            confirmEntry(entryId).then(() => {
-              showToast('Marked as eaten');
-              router.back();
-            })
+            confirmEntry(entryId)
+              .then(() => {
+                showToast('Marked as eaten');
+                router.back();
+              })
+              .catch((e) => showError(e))
           }
           style={styles.confirm}
         />

@@ -6,7 +6,13 @@
 import type { MealType } from '@/types/db';
 
 import { getDatabase } from './database';
-import { ANY_LOGGED, DAILY_KCAL_RANGE, MEAL_KCAL_FOR_DATE } from './insightsSql';
+import { ANY_LOGGED, DAILY_KCAL_RANGE, LOGGED_DATES_DESC, MEAL_KCAL_FOR_DATE } from './insightsSql';
+
+/** Days with logged intake on or before `upTo`, newest first (for the streak). */
+export async function getLoggedDates(upTo: string, limit = 3660): Promise<string[]> {
+  const rows = await getDatabase().getAllAsync<{ date: string }>(LOGGED_DATES_DESC, upTo, limit);
+  return rows.map((r) => r.date);
+}
 
 /** date → consumed kcal for each day with logged data in [start, end]. */
 export async function getDailyKcal(

@@ -55,7 +55,7 @@ export function AuthScreen() {
           />
           <Text style={styles.title}>Nutrition Tracker</Text>
           <Text style={styles.sub}>
-            Sign in to your private diary. It syncs across your devices.
+            Sign in to your private diary. It’s stored on this device and backed up to your account.
           </Text>
 
           <Card>

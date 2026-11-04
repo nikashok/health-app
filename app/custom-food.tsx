@@ -23,7 +23,7 @@ import {
   TintButton,
 } from '@/ui/components';
 import { colors, radius, type } from '@/ui/theme';
-import { showToast } from '@/ui/toast';
+import { showError, showToast } from '@/ui/toast';
 
 /**
  * Custom food screen. Two modes:
@@ -137,6 +137,8 @@ export default function CustomFoodScreen() {
           },
         });
       }
+    } catch (e) {
+      showError(e);
     } finally {
       setSaving(false);
     }
@@ -149,9 +151,13 @@ export default function CustomFoodScreen() {
       'It will no longer appear in search. Past diary entries are unaffected.',
       'Delete',
       async () => {
-        await deleteCustomFood(editCode);
-        showToast('Custom food deleted');
-        router.back();
+        try {
+          await deleteCustomFood(editCode);
+          showToast('Custom food deleted');
+          router.back();
+        } catch (e) {
+          showError(e, 'Couldn’t delete — try again');
+        }
       }
     );
   }

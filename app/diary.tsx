@@ -15,6 +15,7 @@ import {
   consumedTotals,
   groupByMeal,
   MEAL_ORDER,
+  mealConsumedKcal,
   plannedTotals,
   sumEntries,
 } from '@/calc/dayTotals';
@@ -30,6 +31,7 @@ import type { LogEntry, MealType, UserProfile } from '@/types/db';
 import { Card, CardHeader, Chevron, Hairline, Row, TintButton, text } from '@/ui/components';
 import { DatePickerModal } from '@/ui/DatePickerModal';
 import { int } from '@/ui/format';
+import { showError, showToast } from '@/ui/toast';
 import { clampPercent, colors, heroNumber, radius, type } from '@/ui/theme';
 
 const MEAL_LABELS: Record<MealType, string> = {
@@ -44,14 +46,18 @@ export default function DiaryScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ date?: string }>();
   const [date, setDate] = useState(params.date ?? TODAY());
-  const [entries, setEntries] = useState<LogEntry[] | null>(null);
+  // The day's entries, tagged with the date they belong to. Returning to the screen keeps
+  // showing them while they reload (no spinner flash after every edit); only switching to
+  // a different day shows the loading state.
+  const [loaded, setLoaded] = useState<{ date: string; entries: LogEntry[] } | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const entries = loaded && loaded.date === date ? loaded.entries : null;
 
   const load = useCallback(() => {
     return Promise.all([getEntriesForDate(date), getProfile()]).then(([e, p]) => {
-      setEntries(e);
+      setLoaded({ date, entries: e });
       setProfile(p);
     });
   }, [date]);
@@ -59,10 +65,9 @@ export default function DiaryScreen() {
   useFocusEffect(
     useCallback(() => {
       let active = true;
-      setEntries(null);
       Promise.all([getEntriesForDate(date), getProfile()]).then(([e, p]) => {
         if (!active) return;
-        setEntries(e);
+        setLoaded({ date, entries: e });
         setProfile(p);
       });
       return () => {
@@ -70,6 +75,15 @@ export default function DiaryScreen() {
       };
     }, [date])
   );
+
+  /** Confirm plans as eaten, then reload; a failure is reported instead of lost. */
+  const confirm = (run: () => Promise<unknown>, done: string) =>
+    run()
+      .then(() => {
+        showToast(done);
+        return load();
+      })
+      .catch((e) => showError(e));
 
   const today = TODAY();
   const isFuture = date > today;
@@ -183,7 +197,9 @@ export default function DiaryScreen() {
         {showConfirmAll ? (
           <TintButton
             title={`Confirm All Planned (${plannedCount})`}
-            onPress={() => confirmDay(date).then(load)}
+            onPress={() =>
+              confirm(() => confirmDay(date), `${plannedCount} planned ${plannedCount === 1 ? 'item' : 'items'} marked as eaten`)
+            }
             style={showOverlay ? styles.confirmDay : undefined}
           />
         ) : null}
@@ -197,19 +213,35 @@ export default function DiaryScreen() {
       ) : (
         MEAL_ORDER.map((meal) => {
           const mealEntries = grouped[meal];
-          const subtotal = sumEntries(mealEntries).kcal;
-          const mealPlanned = mealEntries.filter((e) => e.status === 'planned').length;
+          const plannedEntries = mealEntries.filter((e) => e.status === 'planned');
+          const mealPlanned = plannedEntries.length;
+          // Intake counts only what was eaten: on today/past days the subtotal is logged food
+          // and plans are shown beside it; a future day is all plan.
+          const subtotal = isFuture
+            ? sumEntries(mealEntries).kcal
+            : mealConsumedKcal(mealEntries, meal);
+          const plannedKcal = isFuture ? 0 : sumEntries(plannedEntries).kcal;
           return (
             <View key={meal}>
               <View style={styles.mealHeaderRow}>
                 <Text style={styles.mealHeaderLabel}>{MEAL_LABELS[meal].toUpperCase()}</Text>
                 <View style={styles.mealHeaderRight}>
                   {confirmable && mealPlanned > 0 ? (
-                    <Pressable onPress={() => confirmMeal(date, meal).then(load)} hitSlop={6}>
+                    <Pressable
+                      onPress={() => confirm(() => confirmMeal(date, meal), `${MEAL_LABELS[meal]} marked as eaten`)}
+                      hitSlop={{ top: 12, bottom: 12, left: 10, right: 10 }}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Confirm planned ${MEAL_LABELS[meal].toLowerCase()} as eaten`}
+                    >
                       <Text style={styles.confirmMeal}>Confirm</Text>
                     </Pressable>
                   ) : null}
-                  <Text style={styles.mealSubtotal}>{int(subtotal)} kcal</Text>
+                  <Text style={styles.mealSubtotal}>
+                    {int(subtotal)} kcal
+                    {plannedKcal > 0 ? (
+                      <Text style={styles.mealPlannedKcal}> · +{int(plannedKcal)} planned</Text>
+                    ) : null}
+                  </Text>
                 </View>
               </View>
 
@@ -221,7 +253,7 @@ export default function DiaryScreen() {
                     first={i === 0}
                     confirmable={confirmable}
                     onOpen={() => router.push({ pathname: '/edit-entry', params: { id: String(entry.id) } })}
-                    onConfirm={() => confirmEntry(entry.id).then(load)}
+                    onConfirm={() => confirm(() => confirmEntry(entry.id), `${entry.food_name} marked as eaten`)}
                   />
                 ))}
                 <Row
@@ -272,7 +304,11 @@ function EntryRow({
       <View style={styles.entryMain}>
         <View style={styles.entryNameRow}>
           <Text style={styles.entryName} numberOfLines={2}>{entry.food_name}</Text>
-          {planned ? <Text style={styles.plannedPill}>Planned</Text> : null}
+          {planned ? (
+            <Text style={styles.plannedPill} numberOfLines={1}>
+              Planned
+            </Text>
+          ) : null}
         </View>
         <Text style={styles.entryPortion}>{portion(entry)}</Text>
       </View>
@@ -282,7 +318,13 @@ function EntryRow({
           <Text style={styles.entryKcalUnit}> kcal</Text>
         </Text>
         {confirmable && planned ? (
-          <Pressable style={styles.ateIt} onPress={onConfirm} hitSlop={6}>
+          <Pressable
+            style={styles.ateIt}
+            onPress={onConfirm}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel={`Ate it: ${entry.food_name}`}
+          >
             <Text style={styles.ateItText}>Ate it</Text>
           </Pressable>
         ) : null}
@@ -348,6 +390,7 @@ const styles = StyleSheet.create({
   mealHeaderLabel: { ...type.footnote, color: colors.muted, letterSpacing: 0.2 },
   mealHeaderRight: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   mealSubtotal: { ...type.footnote, color: colors.muted },
+  mealPlannedKcal: { color: colors.plannedPillText },
   confirmMeal: { ...type.footnote, color: colors.leaf, fontWeight: '600' },
   addText: { ...type.body, color: colors.leaf },
   entryPlanned: { backgroundColor: colors.plannedRow },
@@ -356,6 +399,7 @@ const styles = StyleSheet.create({
   entryNameRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   entryName: { flexShrink: 1, ...type.body, color: colors.ink },
   plannedPill: {
+    flexShrink: 0,
     ...type.caption,
     color: colors.plannedPillText,
     backgroundColor: colors.plannedPillBg,
@@ -370,7 +414,7 @@ const styles = StyleSheet.create({
   entryKcal: { ...type.body, color: colors.ink, fontVariant: ['tabular-nums'] },
   entryKcalUnit: { ...type.footnote, color: colors.muted },
   ateIt: {
-    height: 28,
+    height: 30,
     paddingHorizontal: 12,
     borderRadius: 14,
     backgroundColor: colors.leaf,

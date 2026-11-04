@@ -23,7 +23,7 @@ import {
   Row,
 } from '@/ui/components';
 import { colors, type } from '@/ui/theme';
-import { showToast } from '@/ui/toast';
+import { showError, showToast } from '@/ui/toast';
 
 /** Plausible adult ranges; anything outside asks for confirmation before saving. */
 const WEIGHT_RANGE = [25, 250] as const; // kg — same bounds as the Targets form
@@ -105,6 +105,8 @@ export default function MeasurementScreen() {
       });
       showToast('Reading saved');
       router.back();
+    } catch (e) {
+      showError(e);
     } finally {
       setSaving(false);
     }
@@ -116,9 +118,13 @@ export default function MeasurementScreen() {
       `This removes the weight and waist logged for ${dayjs(date).format('D MMM')}.`,
       'Delete',
       async () => {
-        await deleteMeasurement(date);
-        showToast('Reading deleted');
-        router.back();
+        try {
+          await deleteMeasurement(date);
+          showToast('Reading deleted');
+          router.back();
+        } catch (e) {
+          showError(e, 'Couldn’t delete — try again');
+        }
       }
     );
   }

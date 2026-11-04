@@ -128,3 +128,43 @@ export function daysInBand(
 export function ratio(consumed: number, target: number | null | undefined): number {
   return target != null && target > 0 ? consumed / target : 0;
 }
+
+/**
+ * Consecutive days with logged food, ending today — or ending yesterday while today has
+ * nothing logged yet, so an in-progress morning doesn't break the streak. `dates` is any
+ * list of YYYY-MM-DD days that have logged intake (order and duplicates don't matter).
+ * Unlike a fixed window, this has no upper limit.
+ */
+export function streakFrom(dates: readonly string[], todayISO: string): number {
+  const days = new Set(dates);
+  let d = days.has(todayISO) ? todayISO : addDays(todayISO, -1);
+  let streak = 0;
+  while (days.has(d)) {
+    streak++;
+    d = addDays(d, -1);
+  }
+  return streak;
+}
+
+export interface CompletedAverage {
+  avgKcal: number; // average over counted days (0 when none)
+  countedDays: number; // completed days at/above MIN_COUNTED_KCAL
+  lowDays: number; // logged days left out for being under MIN_COUNTED_KCAL
+}
+
+/**
+ * Daily average over finished days only. Pass the range WITHOUT today: an unfinished
+ * day would drag the average down every afternoon, and the "days on target" count
+ * already leaves today out — so both figures describe the same days. Days below
+ * `minKcal` are treated as incomplete logs and reported in `lowDays` instead.
+ */
+export function completedAverage(
+  pastDays: readonly DayKcal[],
+  minKcal = MIN_COUNTED_KCAL
+): CompletedAverage {
+  const logged = pastDays.filter((d) => d.kcal > 0);
+  const counted = logged.filter((d) => d.kcal >= minKcal);
+  const avgKcal =
+    counted.length === 0 ? 0 : counted.reduce((s, d) => s + d.kcal, 0) / counted.length;
+  return { avgKcal, countedDays: counted.length, lowDays: logged.length - counted.length };
+}

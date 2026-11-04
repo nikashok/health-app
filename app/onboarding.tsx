@@ -14,7 +14,7 @@ import { getProfile, saveProfile } from '@/db/profile';
 import { Card, Chip, formScrollProps, GroupFooter, GroupHeader, PrimaryButton, Row, Segmented } from '@/ui/components';
 import { int } from '@/ui/format';
 import { HomeButton } from '@/ui/HomeButton';
-import { showToast } from '@/ui/toast';
+import { showError, showToast } from '@/ui/toast';
 import { colors, heroNumber, type } from '@/ui/theme';
 
 const SEXES: { value: Sex; label: string }[] = [
@@ -146,6 +146,8 @@ export default function OnboardingScreen() {
       });
       showToast('Targets saved');
       router.replace('/');
+    } catch (e) {
+      showError(e);
     } finally {
       setSaving(false);
     }
@@ -160,7 +162,7 @@ export default function OnboardingScreen() {
     >
       <Stack.Screen options={{ headerRight: hasProfile ? () => <HomeButton /> : () => null }} />
       <Text style={styles.sub}>
-        Your details stay on this device and are used only to estimate calories and macros.
+        Your details are used only to estimate your calories and macros. They’re stored on this device and backed up to your account.
       </Text>
 
       <GroupHeader>Sex</GroupHeader>

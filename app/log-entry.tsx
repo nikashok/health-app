@@ -24,7 +24,7 @@ import {
   text,
 } from '@/ui/components';
 import { int, numberText } from '@/ui/format';
-import { showToast } from '@/ui/toast';
+import { showError, showToast } from '@/ui/toast';
 import { initialQty, isGrams, pickerMeasures, qtyForSwitch, qtyStep } from '@/ui/quantity';
 import { colors, heroNumber, type } from '@/ui/theme';
 
@@ -136,6 +136,8 @@ export default function LogEntryScreen() {
       if (params.origin === 'home') router.dismissAll();
       else if (router.canDismiss()) router.dismiss(2);
       else router.replace({ pathname: '/diary', params: { date } });
+    } catch (e) {
+      showError(e);
     } finally {
       setSaving(false);
     }

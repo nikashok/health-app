@@ -5,8 +5,8 @@ import { ActivityIndicator, RefreshControl, ScrollView, Text, View } from 'react
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { consumedTotals } from '@/calc/dayTotals';
-import { addDays, buildRangeInsights } from '@/calc/insights';
-import { getDailyKcal } from '@/db/insights';
+import { addDays, buildRangeInsights, streakFrom } from '@/calc/insights';
+import { getDailyKcal, getLoggedDates } from '@/db/insights';
 import { getEntriesForDate } from '@/db/logEntries';
 import { getAllMeasurements } from '@/db/measurements';
 import { getProfile } from '@/db/profile';
@@ -17,7 +17,7 @@ import { BottomAction } from '@/ui/components';
 import { BodyTrends } from '@/ui/home/BodyTrends';
 import { CaloriesCard } from '@/ui/home/CaloriesCard';
 import { HomeHeader } from '@/ui/home/HomeHeader';
-import { computeStreak, inferMeal, type HomeState } from '@/ui/home/homeUtils';
+import { inferMeal, type HomeState } from '@/ui/home/homeUtils';
 import { MonthCard, WeekCard } from '@/ui/home/IntakeBars';
 import { QuickActions } from '@/ui/home/QuickActions';
 import { styles } from '@/ui/home/styles';
@@ -30,10 +30,11 @@ async function loadHome(): Promise<HomeState | null> {
   if (profile === null) return null;
   const todayISO = dayjs().format('YYYY-MM-DD');
   const target = profile.target_kcal ?? null;
-  const [todayEntries, monthMap, allMeasurements] = await Promise.all([
+  const [todayEntries, monthMap, allMeasurements, loggedDates] = await Promise.all([
     getEntriesForDate(todayISO),
     getDailyKcal(addDays(todayISO, -29), todayISO),
     getAllMeasurements(),
+    getLoggedDates(todayISO),
   ]);
   return {
     profile,
@@ -41,6 +42,7 @@ async function loadHome(): Promise<HomeState | null> {
     week: buildRangeInsights(monthMap, todayISO, 7, target),
     monthMap,
     allMeasurements,
+    streak: streakFrom(loggedDates, todayISO),
   };
 }
 
@@ -93,11 +95,10 @@ export default function HomeScreen() {
     );
   }
 
-  const { profile, today, week, monthMap, allMeasurements } = state;
+  const { profile, today, week, monthMap, allMeasurements, streak } = state;
   const target = profile.target_kcal ?? null;
   const todayISO = dayjs().format('YYYY-MM-DD');
   const consumed = consumedTotals(today);
-  const streak = computeStreak(monthMap, todayISO);
   const month = buildRangeInsights(monthMap, todayISO, 30, target);
   const syncLabel = syncing ? 'Backing up…' : pending > 0 ? `${pending} to back up` : 'Backed up';
 

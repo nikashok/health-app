@@ -8,9 +8,9 @@ if (Platform.OS !== 'web') {
 }
 
 /**
- * The Supabase client — the app's source of truth for USER data (profile, diary
- * entries, custom foods). The bundled SQLite DB stays on-device as a fast, offline,
- * read-only cache for FOOD SEARCH only; nothing the user creates lives there.
+ * The Supabase client — sign-in, plus a one-way BACKUP of user data (see sync.ts). The
+ * on-device SQLite DB is the source of truth for every read and write; Supabase is only
+ * pushed to, and read once to restore a fresh install.
  *
  * The anon key is safe to ship in the client: every table is guarded by Row-Level
  * Security so a logged-in user can only read/write their own rows, and the food
